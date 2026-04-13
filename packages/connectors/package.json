@@ -1,0 +1,26 @@
+{
+  "name": "@nexkraft/connectors",
+  "version": "0.1.0",
+  "description": "Messaging platform connectors for NexKraft — WhatsApp, Telegram, Discord, Slack, WebChat",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.0.0",
+    "qrcode": "^1.5.0",
+    "telegraf": "^4.15.0",
+    "discord.js": "^14.14.0",
+    "@slack/bolt": "^3.17.0",
+    "eventemitter3": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.0"
+  },
+  "peerDependencies": {
+    "@nexkraft/core": "^0.1.0"
+  }
+}

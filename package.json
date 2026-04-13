@@ -1,0 +1,40 @@
+{
+  "name": "nexkraft",
+  "version": "0.1.0",
+  "description": "NexKraft — Open-source AI agent platform. Build, deploy, and run Digital FTEs.",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev": "npm run dev --workspace=packages/core & npm run dev --workspace=packages/dashboard",
+    "start": "npm run start --workspace=packages/cli",
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "clean": "rm -rf packages/*/dist"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "nexkraft",
+    "autonomous",
+    "whatsapp",
+    "telegram",
+    "discord",
+    "slack",
+    "llm",
+    "chatbot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.0",
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0"
+  }
+}
