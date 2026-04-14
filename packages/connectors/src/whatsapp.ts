@@ -1,5 +1,5 @@
 import { BaseConnector } from "./base.js";
-import type { ConnectorConfig, Message } from "@nexkraft/core";
+import type { ConnectorConfig, Message } from "@autonoma/core";
 
 /**
  * WhatsApp connector using @whiskeysockets/baileys
@@ -11,7 +11,7 @@ export class WhatsAppConnector extends BaseConnector {
 
   private socket: any = null;
   private currentQR: string | null = null;
-  private authDir: string = ".nexkraft/auth/whatsapp";
+  private authDir: string = ".autonoma/auth/whatsapp";
 
   async connect(config: ConnectorConfig): Promise<void> {
     // Dynamic import to avoid issues if baileys isn't installed

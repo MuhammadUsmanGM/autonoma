@@ -21,7 +21,7 @@ export function SettingsPage() {
     <div>
       <div className="page-header">
         <h2>Settings</h2>
-        <p>Configure your Digital FTE</p>
+        <p>Configure your Autonoma</p>
       </div>
 
       <div className="card" style={{ maxWidth: 600, marginBottom: 20 }}>
@@ -55,7 +55,7 @@ export function SettingsPage() {
           </span>
         </div>
         <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 12 }}>
-          Edit your <code style={{ background: "var(--bg-hover)", padding: "2px 6px", borderRadius: 4 }}>digital-fte.config.json</code> or <code style={{ background: "var(--bg-hover)", padding: "2px 6px", borderRadius: 4 }}>.env</code> file to configure:
+          Edit your <code style={{ background: "var(--bg-hover)", padding: "2px 6px", borderRadius: 4 }}>autonoma.config.json</code> or <code style={{ background: "var(--bg-hover)", padding: "2px 6px", borderRadius: 4 }}>.env</code> file to configure:
         </p>
         <ul style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 8, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
           <li>LLM provider and model</li>

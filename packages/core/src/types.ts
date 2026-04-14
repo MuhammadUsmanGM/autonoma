@@ -97,7 +97,7 @@ export interface ConnectorConfig {
   credentials: Record<string, string>;
 }
 
-export interface NexKraftConfig {
+export interface AutonomaConfig {
   name: string;
   port: number;
   llm: {

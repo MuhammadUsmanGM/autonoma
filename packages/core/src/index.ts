@@ -1,5 +1,5 @@
 // Main entry point
-export { NexKraft } from "./digital-fte.js";
+export { Autonoma } from "./digital-fte.js";
 
 // Agent
 export { Agent } from "./agent/index.js";
@@ -42,5 +42,5 @@ export type {
   MemoryEntry,
   Connector,
   ConnectorConfig,
-  NexKraftConfig,
+  AutonomaConfig,
 } from "./types.js";

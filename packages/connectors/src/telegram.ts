@@ -1,5 +1,5 @@
 import { BaseConnector } from "./base.js";
-import type { ConnectorConfig, Message } from "@nexkraft/core";
+import type { ConnectorConfig, Message } from "@autonoma/core";
 
 /**
  * Telegram connector using Telegraf

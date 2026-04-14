@@ -18,8 +18,8 @@ export function App() {
     <div className="layout">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <h1>Digital FTE</h1>
-          <p>AI Employee Platform</p>
+          <h1>Autonoma</h1>
+          <p>AI Agent Platform</p>
         </div>
         <nav className="sidebar-nav">
           <NavLink to="/" end>

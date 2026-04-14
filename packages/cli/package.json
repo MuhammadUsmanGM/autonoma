@@ -1,12 +1,12 @@
 {
-  "name": "nexkraft",
+  "name": "autonoma",
   "version": "0.1.0",
-  "description": "NexKraft — AI agents that work like full-time employees. Run locally, connect to WhatsApp, Telegram, Discord, Slack & more.",
+  "description": "Autonoma — AI agents that work like full-time employees. Run locally, connect to WhatsApp, Telegram, Discord, Slack & more.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "bin": {
-    "nexkraft": "dist/cli.js"
+    "autonoma": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -14,8 +14,8 @@
     "start": "node dist/cli.js start"
   },
   "dependencies": {
-    "@nexkraft/core": "^0.1.0",
-    "@nexkraft/connectors": "^0.1.0",
+    "@autonoma/core": "^0.1.0",
+    "@autonoma/connectors": "^0.1.0",
     "commander": "^12.0.0",
     "chalk": "^5.3.0",
     "ora": "^8.0.0",
@@ -28,7 +28,7 @@
   "keywords": [
     "ai",
     "agent",
-    "nexkraft",
+    "autonoma",
     "whatsapp",
     "telegram",
     "discord",

@@ -1,7 +1,7 @@
 {
-  "name": "@nexkraft/core",
+  "name": "@autonoma/core",
   "version": "0.1.0",
-  "description": "Core agent runtime for NexKraft — LLM integration, message routing, skill system",
+  "description": "Core agent runtime for Autonoma — LLM integration, message routing, skill system",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",

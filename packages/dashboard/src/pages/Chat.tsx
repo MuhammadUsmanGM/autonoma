@@ -61,14 +61,14 @@ export function Chat() {
     <div>
       <div className="page-header">
         <h2>Web Chat</h2>
-        <p>Talk to your Digital FTE directly</p>
+        <p>Talk to your Autonoma directly</p>
       </div>
 
       <div className="chat-container">
         <div className="chat-messages">
           {messages.length === 0 && (
             <div style={{ textAlign: "center", color: "var(--text-secondary)", marginTop: 60 }}>
-              <p style={{ fontSize: 16 }}>Send a message to start chatting with your Digital FTE</p>
+              <p style={{ fontSize: 16 }}>Send a message to start chatting with your Autonoma</p>
             </div>
           )}
           {messages.map((msg) => (

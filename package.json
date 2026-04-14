@@ -1,7 +1,7 @@
 {
-  "name": "nexkraft",
+  "name": "autonoma",
   "version": "0.1.0",
-  "description": "NexKraft — Open-source AI agent platform. Build, deploy, and run Digital FTEs.",
+  "description": "Autonoma — Open-source AI agent platform. Build, deploy, and run digital employees.",
   "private": true,
   "workspaces": [
     "packages/*"
@@ -16,7 +16,7 @@
   "keywords": [
     "ai",
     "agent",
-    "nexkraft",
+    "autonoma",
     "autonomous",
     "whatsapp",
     "telegram",

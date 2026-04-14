@@ -6,18 +6,18 @@ import { Agent } from "./agent/agent.js";
 import { MessageRouter } from "./router/message-router.js";
 import { createLLMProvider } from "./llm/index.js";
 import { createAPI, createWebSocketServer } from "./server/api.js";
-import type { NexKraftConfig, Connector, Skill } from "./types.js";
+import type { AutonomaConfig, Connector, Skill } from "./types.js";
 
-export class NexKraft {
+export class Autonoma {
   private agent: Agent;
   private router: MessageRouter;
-  private config: NexKraftConfig;
+  private config: AutonomaConfig;
   private logger: pino.Logger;
   private server?: ReturnType<typeof createServer>;
 
-  constructor(config: NexKraftConfig) {
+  constructor(config: AutonomaConfig) {
     this.config = config;
-    this.logger = pino({ name: "nexkraft" });
+    this.logger = pino({ name: "autonoma" });
 
     const llm = createLLMProvider({
       provider: config.llm.provider,
@@ -25,7 +25,7 @@ export class NexKraft {
       model: config.llm.model,
     });
 
-    const dataDir = config.dataDir ?? join(process.cwd(), ".nexkraft");
+    const dataDir = config.dataDir ?? join(process.cwd(), ".autonoma");
 
     this.agent = new Agent({
       name: config.name,
@@ -54,7 +54,7 @@ export class NexKraft {
   }
 
   async start(): Promise<void> {
-    const dataDir = this.config.dataDir ?? join(process.cwd(), ".nexkraft");
+    const dataDir = this.config.dataDir ?? join(process.cwd(), ".autonoma");
     await mkdir(dataDir, { recursive: true });
 
     // Connect all enabled connectors
@@ -78,7 +78,7 @@ export class NexKraft {
 
     const port = this.config.port ?? 3000;
     this.server.listen(port, () => {
-      this.logger.info(`NexKraft "${this.config.name}" running at http://localhost:${port}`);
+      this.logger.info(`Autonoma "${this.config.name}" running at http://localhost:${port}`);
       this.logger.info(`Dashboard: http://localhost:${port}`);
       this.logger.info(`API: http://localhost:${port}/api`);
       this.logger.info(`WebSocket: ws://localhost:${port}/ws`);
@@ -89,7 +89,7 @@ export class NexKraft {
     if (this.server) {
       this.server.close();
     }
-    this.logger.info("NexKraft stopped");
+    this.logger.info("Autonoma stopped");
   }
 
   getAgent(): Agent {

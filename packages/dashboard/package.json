@@ -1,7 +1,7 @@
 {
-  "name": "@digital-fte/dashboard",
+  "name": "@autonoma/dashboard",
   "version": "0.1.0",
-  "description": "Web dashboard for Digital FTE — monitor agents, connect platforms, chat",
+  "description": "Web dashboard for Autonoma — monitor agents, connect platforms, chat",
   "private": true,
   "type": "module",
   "scripts": {

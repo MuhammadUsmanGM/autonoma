@@ -14,7 +14,7 @@ export function Skills() {
     <div>
       <div className="page-header">
         <h2>Skills</h2>
-        <p>Manage what your Digital FTE can do</p>
+        <p>Manage what your Autonoma can do</p>
       </div>
 
       <div className="card-grid">
@@ -44,7 +44,7 @@ export function Skills() {
               <Brain size={48} style={{ opacity: 0.3, marginBottom: 16 }} />
               <p>No skills loaded yet.</p>
               <p style={{ fontSize: 13, marginTop: 8 }}>
-                Register skills in your Digital FTE configuration to give your agent capabilities.
+                Register skills in your Autonoma configuration to give your agent capabilities.
               </p>
             </div>
           </div>

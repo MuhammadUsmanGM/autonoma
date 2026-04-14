@@ -1,7 +1,7 @@
 {
-  "name": "@nexkraft/connectors",
+  "name": "@autonoma/connectors",
   "version": "0.1.0",
-  "description": "Messaging platform connectors for NexKraft — WhatsApp, Telegram, Discord, Slack, WebChat",
+  "description": "Messaging platform connectors for Autonoma — WhatsApp, Telegram, Discord, Slack, WebChat",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -21,6 +21,6 @@
     "@types/qrcode": "^1.5.0"
   },
   "peerDependencies": {
-    "@nexkraft/core": "^0.1.0"
+    "@autonoma/core": "^0.1.0"
   }
 }

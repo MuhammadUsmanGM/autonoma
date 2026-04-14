@@ -36,7 +36,7 @@ export function Connectors() {
     <div>
       <div className="page-header">
         <h2>Connectors</h2>
-        <p>Connect your Digital FTE to messaging platforms</p>
+        <p>Connect your Autonoma to messaging platforms</p>
       </div>
 
       <div className="card-grid">

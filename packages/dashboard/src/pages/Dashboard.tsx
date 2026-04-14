@@ -34,7 +34,7 @@ export function Dashboard() {
     <div>
       <div className="page-header">
         <h2>Dashboard</h2>
-        <p>Overview of your Digital FTE agent</p>
+        <p>Overview of your Autonoma agent</p>
       </div>
 
       <div className="stat-grid">

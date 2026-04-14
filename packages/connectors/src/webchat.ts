@@ -1,9 +1,9 @@
 import { BaseConnector } from "./base.js";
-import type { ConnectorConfig, Message } from "@nexkraft/core";
+import type { ConnectorConfig, Message } from "@autonoma/core";
 
 /**
  * Built-in web chat connector
- * Messages are received via the REST API and WebSocket server in @digital-fte/core
+ * Messages are received via the REST API and WebSocket server in @autonoma/core
  * This connector acts as a bridge for the dashboard's built-in chat
  */
 export class WebChatConnector extends BaseConnector {

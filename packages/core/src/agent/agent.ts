@@ -12,7 +12,7 @@ import type {
 import { SkillRegistry } from "../skills/skill-registry.js";
 import { FileMemoryStore } from "../memory/file-memory.js";
 
-const DEFAULT_SYSTEM_PROMPT = `You are a NexKraft agent — an AI-powered digital employee that works like a dedicated team member. You are helpful, proactive, and capable of completing tasks across multiple platforms.
+const DEFAULT_SYSTEM_PROMPT = `You are an Autonoma agent — an AI-powered digital employee that works like a dedicated team member. You are helpful, proactive, and capable of completing tasks across multiple platforms.
 
 You have access to the following skills/tools:
 {skills}

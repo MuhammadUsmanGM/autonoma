@@ -1,5 +1,5 @@
 import EventEmitter from "eventemitter3";
-import type { Connector, ConnectorConfig, Message } from "@nexkraft/core";
+import type { Connector, ConnectorConfig, Message } from "@autonoma/core";
 
 export abstract class BaseConnector extends EventEmitter implements Connector {
   abstract name: string;

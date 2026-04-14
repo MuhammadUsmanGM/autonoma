@@ -4,14 +4,14 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 
 export async function initCommand() {
-  console.log(chalk.bold("\n  Digital FTE — Project Setup\n"));
+  console.log(chalk.bold("\n  Autonoma — Project Setup\n"));
 
   const answers = await inquirer.prompt([
     {
       type: "input",
       name: "name",
       message: "Agent name:",
-      default: "My Digital FTE",
+      default: "My Autonoma Agent",
     },
     {
       type: "list",
@@ -60,31 +60,31 @@ export async function initCommand() {
     })),
   };
 
-  const configPath = resolve(process.cwd(), "digital-fte.config.json");
+  const configPath = resolve(process.cwd(), "autonoma.config.json");
   await writeFile(configPath, JSON.stringify(config, null, 2));
 
   // Create .env template
   const envLines = [
-    `# Digital FTE Configuration`,
-    `DFTE_NAME="${answers.name}"`,
-    `DFTE_LLM_PROVIDER=${answers.provider}`,
-    `DFTE_LLM_API_KEY=your-api-key-here`,
+    `# Autonoma Configuration`,
+    `AUTONOMA_NAME="${answers.name}"`,
+    `AUTONOMA_LLM_PROVIDER=${answers.provider}`,
+    `AUTONOMA_LLM_API_KEY=your-api-key-here`,
     ``,
   ];
 
   if (answers.connectors.includes("whatsapp")) {
-    envLines.push("DFTE_WHATSAPP_ENABLED=true");
+    envLines.push("AUTONOMA_WHATSAPP_ENABLED=true");
   }
   if (answers.connectors.includes("telegram")) {
-    envLines.push("DFTE_TELEGRAM_TOKEN=your-telegram-bot-token");
+    envLines.push("AUTONOMA_TELEGRAM_TOKEN=your-telegram-bot-token");
   }
   if (answers.connectors.includes("discord")) {
-    envLines.push("DFTE_DISCORD_TOKEN=your-discord-bot-token");
+    envLines.push("AUTONOMA_DISCORD_TOKEN=your-discord-bot-token");
   }
   if (answers.connectors.includes("slack")) {
-    envLines.push("DFTE_SLACK_TOKEN=your-slack-bot-token");
-    envLines.push("DFTE_SLACK_SIGNING_SECRET=your-signing-secret");
-    envLines.push("DFTE_SLACK_APP_TOKEN=your-app-token");
+    envLines.push("AUTONOMA_SLACK_TOKEN=your-slack-bot-token");
+    envLines.push("AUTONOMA_SLACK_SIGNING_SECRET=your-signing-secret");
+    envLines.push("AUTONOMA_SLACK_APP_TOKEN=your-app-token");
   }
 
   const envPath = resolve(process.cwd(), ".env");
@@ -98,7 +98,7 @@ export async function initCommand() {
   console.log("");
   console.log(chalk.bold("  Next steps:"));
   console.log(`  1. Edit ${chalk.cyan(".env")} with your API keys`);
-  console.log(`  2. Run ${chalk.cyan("npx digital-fte start")}`);
+  console.log(`  2. Run ${chalk.cyan("npx autonoma start")}`);
   console.log(`  3. Open ${chalk.cyan(`http://localhost:${answers.port}`)} to access the dashboard`);
   console.log("");
 }
