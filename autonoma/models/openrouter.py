@@ -104,7 +104,12 @@ class OpenRouterProvider(LLMProvider):
     def _build_messages(
         self, messages: list[LLMMessage], system_prompt: str | None = None
     ) -> list[dict]:
-        """Convert LLMMessage list to OpenAI API format."""
+        """Convert LLMMessage list to OpenAI API format.
+
+        Handles Anthropic-format structured content blocks (tool_use in
+        assistant messages, tool_result in user messages) and converts
+        them to the OpenAI function-calling format.
+        """
         api_messages = []
         if system_prompt:
             api_messages.append({"role": "system", "content": system_prompt})
@@ -113,22 +118,77 @@ class OpenRouterProvider(LLMProvider):
             if m.role == "system":
                 continue
             if m.role == "tool":
-                # Tool result message
+                # Already in OpenAI tool format
                 api_messages.append({
                     "role": "tool",
                     "tool_call_id": m.tool_call_id or "",
                     "content": m.content if isinstance(m.content, str) else json.dumps(m.content),
                 })
             elif isinstance(m.content, list):
-                # Structured content — convert to string for OpenAI format
-                text_parts = [
-                    b.get("text", "") for b in m.content if b.get("type") == "text"
-                ]
-                api_messages.append({"role": m.role, "content": "\n".join(text_parts)})
+                if m.role == "assistant":
+                    # Anthropic-format assistant message with tool_use blocks
+                    # → convert to OpenAI assistant message with tool_calls array
+                    self._convert_assistant_blocks(api_messages, m.content)
+                elif m.role == "user":
+                    # Anthropic-format user message with tool_result blocks
+                    # → convert to separate role="tool" messages (OpenAI format)
+                    self._convert_tool_result_blocks(api_messages, m.content)
+                else:
+                    # Fallback: extract text
+                    text_parts = [
+                        b.get("text", "") for b in m.content if b.get("type") == "text"
+                    ]
+                    api_messages.append({"role": m.role, "content": "\n".join(text_parts)})
             else:
                 api_messages.append({"role": m.role, "content": m.content})
 
         return api_messages
+
+    def _convert_assistant_blocks(
+        self, api_messages: list[dict], blocks: list[dict]
+    ) -> None:
+        """Convert Anthropic assistant content blocks to OpenAI format.
+
+        Anthropic: [{"type":"text","text":"..."}, {"type":"tool_use","id":"...","name":"...","input":{}}]
+        OpenAI:    {"role":"assistant","content":"...","tool_calls":[{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}]}
+        """
+        text_parts = []
+        tool_calls = []
+
+        for block in blocks:
+            if block.get("type") == "text" and block.get("text"):
+                text_parts.append(block["text"])
+            elif block.get("type") == "tool_use":
+                tool_calls.append({
+                    "id": block["id"],
+                    "type": "function",
+                    "function": {
+                        "name": block["name"],
+                        "arguments": json.dumps(block.get("input", {})),
+                    },
+                })
+
+        msg: dict = {"role": "assistant"}
+        msg["content"] = "\n".join(text_parts) if text_parts else None
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        api_messages.append(msg)
+
+    def _convert_tool_result_blocks(
+        self, api_messages: list[dict], blocks: list[dict]
+    ) -> None:
+        """Convert Anthropic tool_result content blocks to OpenAI format.
+
+        Anthropic: [{"type":"tool_result","tool_use_id":"...","content":"..."}]  (single user message)
+        OpenAI:    [{"role":"tool","tool_call_id":"...","content":"..."}]  (one message per result)
+        """
+        for block in blocks:
+            if block.get("type") == "tool_result":
+                api_messages.append({
+                    "role": "tool",
+                    "tool_call_id": block["tool_use_id"],
+                    "content": block.get("content", ""),
+                })
 
     def _convert_tools(self, anthropic_tools: list[dict]) -> list[dict]:
         """Convert Anthropic tool format to OpenAI function-calling format."""
