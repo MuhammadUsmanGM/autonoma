@@ -10,4 +10,10 @@ def create_provider(config: LLMConfig) -> LLMProvider:
         from autonoma.models.anthropic import AnthropicProvider
 
         return AnthropicProvider(api_key=config.api_key, model=config.model)
+
+    if config.provider == "openrouter":
+        from autonoma.models.openrouter import OpenRouterProvider
+
+        return OpenRouterProvider(api_key=config.api_key, model=config.model)
+
     raise ValueError(f"Unknown LLM provider: {config.provider}")

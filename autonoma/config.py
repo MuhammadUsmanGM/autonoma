@@ -56,8 +56,13 @@ def load_config(config_path: str | None = None) -> Config:
         log_level=data.get("log_level", "INFO"),
     )
 
-    # Override LLM API key from environment
-    api_key = os.getenv("AUTONOMA_LLM_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or ""
+    # Override LLM API key from environment (check provider-specific keys too)
+    api_key = (
+        os.getenv("AUTONOMA_LLM_API_KEY")
+        or os.getenv("OPENROUTER_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+        or ""
+    )
     if api_key:
         config.llm.api_key = api_key
 
