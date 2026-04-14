@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import pino from "pino";
 import { Agent } from "./agent/agent.js";
 import { MessageRouter } from "./router/message-router.js";
 import { createLLMProvider } from "./llm/index.js";
 import { createAPI, createWebSocketServer } from "./server/api.js";
-import type { AutonomaConfig, Connector, Skill } from "./types.js";
+import type { AutonomaConfig, Connector, ConnectorConfig, Skill } from "./types.js";
 
 export class Autonoma {
   private agent: Agent;
@@ -14,9 +14,11 @@ export class Autonoma {
   private config: AutonomaConfig;
   private logger: pino.Logger;
   private server?: ReturnType<typeof createServer>;
+  private dataDir: string;
 
   constructor(config: AutonomaConfig) {
     this.config = config;
+    this.dataDir = config.dataDir ?? join(process.cwd(), ".autonoma");
     this.logger = pino({ name: "autonoma" });
 
     const llm = createLLMProvider({
@@ -25,12 +27,10 @@ export class Autonoma {
       model: config.llm.model,
     });
 
-    const dataDir = config.dataDir ?? join(process.cwd(), ".autonoma");
-
     this.agent = new Agent({
       name: config.name,
       llm,
-      dataDir,
+      dataDir: this.dataDir,
       systemPrompt: config.systemPrompt,
     });
 
@@ -54,25 +54,22 @@ export class Autonoma {
   }
 
   async start(): Promise<void> {
-    const dataDir = this.config.dataDir ?? join(process.cwd(), ".autonoma");
-    await mkdir(dataDir, { recursive: true });
+    await mkdir(this.dataDir, { recursive: true });
 
-    // Connect all enabled connectors
+    // 1. Connect connectors from config file
     for (const connConfig of this.config.connectors) {
       if (!connConfig.enabled) continue;
       const connector = this.router.getConnector(connConfig.type);
       if (connector) {
-        try {
-          await connector.connect(connConfig);
-          this.logger.info({ connector: connConfig.type }, "Connector connected");
-        } catch (err) {
-          this.logger.error({ connector: connConfig.type, err }, "Failed to connect");
-        }
+        await this.connectSafe(connector, connConfig);
       }
     }
 
+    // 2. Auto-reconnect previously saved connectors (from dashboard setup)
+    await this.restoreSavedConnectors();
+
     // Start HTTP + WebSocket server
-    const app = createAPI(this.agent, this.router);
+    const app = createAPI(this.agent, this.router, this.dataDir);
     this.server = createServer(app);
     createWebSocketServer(this.server, this.agent, this.router);
 
@@ -85,7 +82,45 @@ export class Autonoma {
     });
   }
 
+  private async restoreSavedConnectors(): Promise<void> {
+    try {
+      const configPath = join(this.dataDir, "connectors.json");
+      const raw = await readFile(configPath, "utf-8");
+      const saved = JSON.parse(raw) as Record<string, { type: string; enabled: boolean; credentials: Record<string, string> }>;
+
+      for (const [name, config] of Object.entries(saved)) {
+        if (!config.enabled) continue;
+        const connector = this.router.getConnector(name);
+        if (connector && !connector.connected) {
+          await this.connectSafe(connector, config);
+        }
+      }
+    } catch {
+      // No saved config or parse error — that's fine
+    }
+  }
+
+  private async connectSafe(connector: Connector, config: ConnectorConfig): Promise<void> {
+    try {
+      await connector.connect(config);
+      this.logger.info({ connector: connector.name }, "Connector connected");
+    } catch (err) {
+      this.logger.error({ connector: connector.name, err }, "Failed to connect");
+    }
+  }
+
   async stop(): Promise<void> {
+    // Disconnect all connectors gracefully
+    for (const [name, connector] of this.router.getConnectors()) {
+      if (connector.connected) {
+        try {
+          await connector.disconnect();
+          this.logger.info({ connector: name }, "Connector disconnected");
+        } catch (err) {
+          this.logger.error({ connector: name, err }, "Error disconnecting");
+        }
+      }
+    }
     if (this.server) {
       this.server.close();
     }

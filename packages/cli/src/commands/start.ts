@@ -11,6 +11,7 @@ import {
   DiscordConnector,
   SlackConnector,
   WebChatConnector,
+  GmailConnector,
 } from "@autonoma/connectors";
 
 export async function startCommand(options: { port: string; config: string }) {
@@ -52,22 +53,13 @@ export async function startCommand(options: { port: string; config: string }) {
     // Create instance
     const agent = new Autonoma(config);
 
-    // Register available connectors
+    // Register all connectors — they connect later via dashboard or saved config
     agent.registerConnector(new WebChatConnector());
-
-    // Auto-register connectors based on env vars
-    if (process.env.AUTONOMA_WHATSAPP_ENABLED === "true") {
-      agent.registerConnector(new WhatsAppConnector());
-    }
-    if (process.env.AUTONOMA_TELEGRAM_TOKEN) {
-      agent.registerConnector(new TelegramConnector());
-    }
-    if (process.env.AUTONOMA_DISCORD_TOKEN) {
-      agent.registerConnector(new DiscordConnector());
-    }
-    if (process.env.AUTONOMA_SLACK_TOKEN && process.env.AUTONOMA_SLACK_SIGNING_SECRET) {
-      agent.registerConnector(new SlackConnector());
-    }
+    agent.registerConnector(new WhatsAppConnector());
+    agent.registerConnector(new TelegramConnector());
+    agent.registerConnector(new DiscordConnector());
+    agent.registerConnector(new SlackConnector());
+    agent.registerConnector(new GmailConnector());
 
     // Start
     await agent.start();

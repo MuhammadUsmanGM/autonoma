@@ -34,6 +34,7 @@ export async function initCommand() {
         { name: "Telegram (Bot)", value: "telegram" },
         { name: "Discord (Bot)", value: "discord" },
         { name: "Slack (App)", value: "slack" },
+        { name: "Gmail (App Password)", value: "gmail" },
         { name: "Web Chat (built-in)", value: "webchat", checked: true },
       ],
     },
@@ -85,6 +86,10 @@ export async function initCommand() {
     envLines.push("AUTONOMA_SLACK_TOKEN=your-slack-bot-token");
     envLines.push("AUTONOMA_SLACK_SIGNING_SECRET=your-signing-secret");
     envLines.push("AUTONOMA_SLACK_APP_TOKEN=your-app-token");
+  }
+  if (answers.connectors.includes("gmail")) {
+    envLines.push("AUTONOMA_GMAIL_EMAIL=your-email@gmail.com");
+    envLines.push("AUTONOMA_GMAIL_APP_PASSWORD=your-app-password");
   }
 
   const envPath = resolve(process.cwd(), ".env");

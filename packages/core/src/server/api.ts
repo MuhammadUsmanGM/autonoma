@@ -1,19 +1,54 @@
 import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { join, dirname } from "node:path";
 import type { Server } from "node:http";
 import type { Agent } from "../agent/agent.js";
 import type { MessageRouter } from "../router/message-router.js";
-import type { Message, AgentResponse } from "../types.js";
+import type { Message, AgentResponse, ConnectorConfig } from "../types.js";
 
-export function createAPI(agent: Agent, router: MessageRouter): express.Express {
+interface SavedConnectorConfig {
+  type: string;
+  enabled: boolean;
+  credentials: Record<string, string>;
+  connectedAt?: string;
+}
+
+export function createAPI(agent: Agent, router: MessageRouter, dataDir?: string): express.Express {
   const app = express();
   app.use(express.json());
+
+  const configDir = dataDir ?? join(process.cwd(), ".autonoma");
+  const connectorsConfigPath = join(configDir, "connectors.json");
+
+  // --- Helpers for persisting connector configs ---
+  async function loadSavedConfigs(): Promise<Record<string, SavedConnectorConfig>> {
+    try {
+      const raw = await readFile(connectorsConfigPath, "utf-8");
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+
+  async function saveConnectorConfig(name: string, config: SavedConnectorConfig): Promise<void> {
+    const all = await loadSavedConfigs();
+    all[name] = config;
+    await mkdir(dirname(connectorsConfigPath), { recursive: true });
+    await writeFile(connectorsConfigPath, JSON.stringify(all, null, 2));
+  }
+
+  async function removeConnectorConfig(name: string): Promise<void> {
+    const all = await loadSavedConfigs();
+    delete all[name];
+    await writeFile(connectorsConfigPath, JSON.stringify(all, null, 2));
+  }
 
   // CORS for local dashboard
   app.use((_req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Content-Type");
-    res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     if (_req.method === "OPTIONS") {
       res.sendStatus(200);
       return;
@@ -38,19 +73,90 @@ export function createAPI(agent: Agent, router: MessageRouter): express.Express 
     });
   });
 
-  // List connectors
+  // ====== CONNECTOR ENDPOINTS ======
+
+  // List all connectors with status
   app.get("/api/connectors", (_req, res) => {
-    const connectors = [...router.getConnectors().entries()].map(
-      ([name, c]) => ({
+    const connectors = [...router.getConnectors().entries()].map(([name, c]) => {
+      const statusFn = (c as any).getStatus;
+      const status = statusFn ? statusFn.call(c) : { state: c.connected ? "connected" : "disconnected" };
+      return {
         name,
         type: c.type,
         connected: c.connected,
-      })
-    );
+        status,
+      };
+    });
     res.json({ connectors });
   });
 
-  // Get QR code for a connector (e.g., WhatsApp)
+  // Get status of a single connector
+  app.get("/api/connectors/:name/status", (req, res) => {
+    const connector = router.getConnector(req.params.name);
+    if (!connector) {
+      res.status(404).json({ error: "Connector not found" });
+      return;
+    }
+    const statusFn = (connector as any).getStatus;
+    const status = statusFn ? statusFn.call(connector) : { state: connector.connected ? "connected" : "disconnected" };
+    res.json({ name: req.params.name, type: connector.type, connected: connector.connected, status });
+  });
+
+  // Connect a connector at runtime (the main setup endpoint)
+  app.post("/api/connectors/:name/connect", async (req, res) => {
+    const { name } = req.params;
+    const { credentials } = req.body as { credentials: Record<string, string> };
+
+    const connector = router.getConnector(name);
+    if (!connector) {
+      res.status(404).json({ error: `Connector "${name}" not registered. Available: ${[...router.getConnectors().keys()].join(", ")}` });
+      return;
+    }
+
+    if (connector.connected) {
+      res.status(400).json({ error: "Already connected. Disconnect first." });
+      return;
+    }
+
+    const config: ConnectorConfig = {
+      type: connector.type,
+      enabled: true,
+      credentials: credentials ?? {},
+    };
+
+    try {
+      await connector.connect(config);
+
+      // Persist so it auto-connects on restart
+      await saveConnectorConfig(name, {
+        ...config,
+        connectedAt: new Date().toISOString(),
+      });
+
+      res.json({ ok: true, message: `${name} connected successfully` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Disconnect a connector
+  app.post("/api/connectors/:name/disconnect", async (req, res) => {
+    const connector = router.getConnector(req.params.name);
+    if (!connector) {
+      res.status(404).json({ error: "Connector not found" });
+      return;
+    }
+
+    try {
+      await connector.disconnect();
+      await removeConnectorConfig(req.params.name);
+      res.json({ ok: true, message: `${req.params.name} disconnected` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get QR code (WhatsApp)
   app.get("/api/connectors/:name/qr", async (req, res) => {
     const connector = router.getConnector(req.params.name);
     if (!connector) {
@@ -65,7 +171,46 @@ export function createAPI(agent: Agent, router: MessageRouter): express.Express 
     res.json({ qr });
   });
 
-  // List conversations
+  // WhatsApp-specific: start connection (no credentials needed, just QR scan)
+  app.post("/api/connectors/whatsapp/start", async (_req, res) => {
+    const connector = router.getConnector("whatsapp");
+    if (!connector) {
+      res.status(404).json({ error: "WhatsApp connector not registered" });
+      return;
+    }
+    if (connector.connected) {
+      res.json({ ok: true, message: "Already connected" });
+      return;
+    }
+
+    try {
+      await connector.connect({
+        type: "whatsapp",
+        enabled: true,
+        credentials: { authDir: join(configDir, "auth", "whatsapp") },
+      });
+      res.json({ ok: true, message: "WhatsApp connecting — check /api/connectors/whatsapp/qr for QR code" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get saved connector configs (for dashboard to show what was previously set up)
+  app.get("/api/connectors/saved", async (_req, res) => {
+    const saved = await loadSavedConfigs();
+    // Strip credentials for security — just return types and status
+    const result = Object.entries(saved).map(([name, config]) => ({
+      name,
+      type: config.type,
+      enabled: config.enabled,
+      connectedAt: config.connectedAt,
+      hasCredentials: Object.keys(config.credentials).length > 0,
+    }));
+    res.json({ saved: result });
+  });
+
+  // ====== CONVERSATION ENDPOINTS ======
+
   app.get("/api/conversations", (_req, res) => {
     const conversations = agent.getConversations().map((c) => ({
       id: c.id,
@@ -78,7 +223,8 @@ export function createAPI(agent: Agent, router: MessageRouter): express.Express 
     res.json({ conversations });
   });
 
-  // Send a message via web chat
+  // ====== CHAT ENDPOINT ======
+
   app.post("/api/chat", async (req, res) => {
     const { content, channelId = "web-default" } = req.body as {
       content: string;
@@ -104,7 +250,8 @@ export function createAPI(agent: Agent, router: MessageRouter): express.Express 
     res.json({ response });
   });
 
-  // Memory endpoints
+  // ====== MEMORY ENDPOINTS ======
+
   app.get("/api/memory", async (_req, res) => {
     const entries = await agent.memory.list();
     res.json({ entries });
@@ -131,7 +278,6 @@ export function createWebSocketServer(
 ): WebSocketServer {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
-  // Broadcast events to all connected dashboard clients
   function broadcast(event: string, data: unknown): void {
     const payload = JSON.stringify({ event, data });
     for (const client of wss.clients) {
@@ -156,6 +302,13 @@ export function createWebSocketServer(
   router.on("connector:disconnected", (name: string) => {
     broadcast("connector:disconnected", { name });
   });
+
+  // Broadcast connector status changes
+  for (const [name, connector] of router.getConnectors()) {
+    (connector as any).on?.("status", (status: unknown) => {
+      broadcast("connector:status", { name, status });
+    });
+  }
 
   // Handle web chat messages over WebSocket
   wss.on("connection", (ws) => {
