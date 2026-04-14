@@ -3,14 +3,15 @@ import {
   LayoutDashboard,
   MessageSquare,
   Plug,
-  Cpu,
   Settings,
   Brain,
+  Database,
 } from "lucide-react";
 import { Dashboard } from "./pages/Dashboard";
 import { Chat } from "./pages/Chat";
 import { Connectors } from "./pages/Connectors";
 import { Skills } from "./pages/Skills";
+import { Memory } from "./pages/Memory";
 import { SettingsPage } from "./pages/Settings";
 
 export function App() {
@@ -31,6 +32,9 @@ export function App() {
           <NavLink to="/connectors">
             <Plug size={18} /> Connectors
           </NavLink>
+          <NavLink to="/memory">
+            <Database size={18} /> Memory
+          </NavLink>
           <NavLink to="/skills">
             <Brain size={18} /> Skills
           </NavLink>
@@ -44,6 +48,7 @@ export function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/connectors" element={<Connectors />} />
+          <Route path="/memory" element={<Memory />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>

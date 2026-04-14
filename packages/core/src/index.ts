@@ -21,6 +21,8 @@ export { SkillRegistry } from "./skills/index.js";
 
 // Memory
 export { FileMemoryStore } from "./memory/index.js";
+export { FileMemoryManager } from "./memory/index.js";
+export { FileConversationStore } from "./memory/index.js";
 
 // Server
 export { createAPI, createWebSocketServer } from "./server/index.js";
@@ -38,8 +40,12 @@ export type {
   SkillParameter,
   SkillContext,
   AgentInstance,
+  MemoryManager,
   MemoryStore,
   MemoryEntry,
+  MemoryFact,
+  UserProfile,
+  ConversationStore,
   Connector,
   ConnectorConfig,
   AutonomaConfig,

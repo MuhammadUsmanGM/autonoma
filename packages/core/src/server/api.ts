@@ -252,20 +252,74 @@ export function createAPI(agent: Agent, router: MessageRouter, dataDir?: string)
 
   // ====== MEMORY ENDPOINTS ======
 
-  app.get("/api/memory", async (_req, res) => {
-    const entries = await agent.memory.list();
+  // Key-value memory
+  app.get("/api/memory/kv", async (_req, res) => {
+    // For backwards compat, list all kv entries
+    const entries = await (agent.memory as any).getFacts?.() ?? [];
     res.json({ entries });
   });
 
-  app.post("/api/memory", async (req, res) => {
+  app.post("/api/memory/kv", async (req, res) => {
     const { key, value } = req.body as { key: string; value: string };
     await agent.memory.set(key, value);
     res.json({ ok: true });
   });
 
-  app.delete("/api/memory/:key", async (req, res) => {
+  app.delete("/api/memory/kv/:key", async (req, res) => {
     await agent.memory.delete(req.params.key);
     res.json({ ok: true });
+  });
+
+  // User profiles
+  app.get("/api/memory/users", async (_req, res) => {
+    const users = await (agent.memory as any).listUsers?.() ?? [];
+    res.json({ users });
+  });
+
+  app.get("/api/memory/users/:platform/:userId", async (req, res) => {
+    const user = await agent.memory.getUser(req.params.platform, req.params.userId);
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    res.json({ user });
+  });
+
+  // Facts
+  app.get("/api/memory/facts", async (req, res) => {
+    const query = req.query.q as string | undefined;
+    const facts = await (agent.memory as any).getFacts?.(query) ?? [];
+    res.json({ facts });
+  });
+
+  app.post("/api/memory/facts", async (req, res) => {
+    const { content, tags } = req.body as { content: string; tags?: string[] };
+    const fact = await (agent.memory as any).addFact?.({
+      content,
+      source: "dashboard",
+      tags: tags ?? [],
+    });
+    res.json({ fact });
+  });
+
+  app.delete("/api/memory/facts/:id", async (req, res) => {
+    await (agent.memory as any).deleteFact?.(req.params.id);
+    res.json({ ok: true });
+  });
+
+  // Memory stats
+  app.get("/api/memory/stats", async (_req, res) => {
+    const users = await (agent.memory as any).listUsers?.() ?? [];
+    const facts = await (agent.memory as any).getFacts?.() ?? [];
+    const conversations = agent.getConversations();
+    const totalMessages = conversations.reduce((sum, c) => sum + c.messages.length, 0);
+
+    res.json({
+      users: users.length,
+      facts: facts.length,
+      conversations: conversations.length,
+      totalMessages,
+    });
   });
 
   return app;
