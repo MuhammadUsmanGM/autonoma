@@ -1,11 +1,29 @@
-node_modules/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
 dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment
 .env
 .env.local
-*.log
-.DS_Store
-.turbo
-coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# Project runtime data
 .session/
-.autonoma/
-data/
+workspace/memory/
+
+# OS
+.DS_Store
+*.log

@@ -1,0 +1,14 @@
+name: "Autonoma"
+
+gateway:
+  host: "127.0.0.1"
+  port: 8765
+
+llm:
+  provider: "anthropic"
+  # api_key: loaded from AUTONOMA_LLM_API_KEY or ANTHROPIC_API_KEY env var
+  model: "claude-sonnet-4-6"
+
+workspace_dir: "workspace"
+session_dir: ".session"
+log_level: "INFO"
