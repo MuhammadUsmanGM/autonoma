@@ -8,9 +8,11 @@ from autonoma.config import Config
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.loop import AgentLoop
 from autonoma.cortex.session import SessionManager
+from autonoma.executor.tool_runner import ToolRunner
 from autonoma.memory.store import MemoryStore
 from autonoma.models.provider import LLMProvider
 from autonoma.schema import AgentResponse, Message
+from autonoma.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +27,13 @@ class Agent:
         memory_store: MemoryStore,
         session_manager: SessionManager,
         context_assembler: ContextAssembler,
+        tool_runner: ToolRunner | None = None,
+        skill_registry: SkillRegistry | None = None,
     ):
         self.name = config.name
         self._loop = AgentLoop(
-            provider, context_assembler, memory_store, session_manager
+            provider, context_assembler, memory_store, session_manager,
+            tool_runner=tool_runner, skill_registry=skill_registry,
         )
         self._sessions = session_manager
         self._active_sessions: dict[str, str] = {}  # channel_id -> session_id

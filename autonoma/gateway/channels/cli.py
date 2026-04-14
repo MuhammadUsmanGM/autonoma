@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -12,13 +11,13 @@ from rich.panel import Panel
 from rich.text import Text
 
 from autonoma.gateway.channels.base import ChannelAdapter, MessageHandler
-from autonoma.schema import Message
+from autonoma.schema import AgentResponse, Message
 
 logger = logging.getLogger(__name__)
 
 
 class CLIChannel(ChannelAdapter):
-    """Interactive terminal channel — the primary interface for Phase 1."""
+    """Interactive terminal channel with tool execution display."""
 
     def __init__(self, agent_name: str = "Autonoma"):
         self._console = Console()
@@ -62,6 +61,14 @@ class CLIChannel(ChannelAdapter):
             )
 
             response = await message_handler(message)
+
+            # Clear thinking indicator
+            self._console.print(" " * 60, end="\r")
+
+            # Show tool execution trace if any
+            self._display_tool_trace(response)
+
+            # Show final response
             self._display_response(response.content)
 
         self._running = False
@@ -83,17 +90,38 @@ class CLIChannel(ChannelAdapter):
         self._console.print()
 
     def _read_input(self) -> str | None:
-        """Blocking stdin read — runs in a thread via asyncio.to_thread."""
         try:
             return input("You > ")
         except EOFError:
             return None
 
-    def _display_response(self, content: str) -> None:
-        # Clear the "thinking" line
-        self._console.print(" " * 60, end="\r")
-        # Render response as markdown
+    def _display_tool_trace(self, response: AgentResponse) -> None:
+        """Show tool calls that were executed during processing."""
+        tool_calls = response.metadata.get("tool_calls", [])
+        if not tool_calls:
+            return
+
+        for tc in tool_calls:
+            tool_name = tc.get("tool", "unknown")
+            tool_input = tc.get("input", {})
+            is_error = tc.get("is_error", False)
+            result_preview = tc.get("result", "")[:150]
+
+            # Tool call header
+            icon = "[red]x[/red]" if is_error else "[green]v[/green]"
+            input_summary = self._summarize_input(tool_input)
+
+            self._console.print(
+                f"  {icon} [bold yellow]{tool_name}[/bold yellow] {input_summary}",
+            )
+            if result_preview:
+                # Show a short preview of the result
+                preview = result_preview.replace("\n", " ")[:100]
+                self._console.print(f"    [dim]{preview}[/dim]")
+
         self._console.print()
+
+    def _display_response(self, content: str) -> None:
         self._console.print(
             Panel(
                 Markdown(content),
@@ -104,3 +132,16 @@ class CLIChannel(ChannelAdapter):
             )
         )
         self._console.print()
+
+    @staticmethod
+    def _summarize_input(params: dict) -> str:
+        """Create a short summary of tool input params."""
+        if not params:
+            return ""
+        parts = []
+        for k, v in params.items():
+            val = str(v)
+            if len(val) > 40:
+                val = val[:40] + "..."
+            parts.append(f"{k}={val}")
+        return "[dim](" + ", ".join(parts) + ")[/dim]"

@@ -35,8 +35,59 @@ class AgentResponse:
 class LLMMessage:
     """A single message in the LLM conversation format."""
 
-    role: str  # "system", "user", "assistant"
+    role: str  # "system", "user", "assistant", "tool"
+    content: str | list[dict[str, Any]] = ""  # str for text, list for tool_result blocks
+    tool_call_id: str | None = None  # For role="tool" messages (OpenAI format)
+
+
+@dataclass
+class ToolCall:
+    """A tool invocation requested by the LLM."""
+
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
+@dataclass
+class ToolResult:
+    """Result from executing a tool."""
+
+    tool_use_id: str  # Matches ToolCall.id
     content: str
+    is_error: bool = False
+
+
+@dataclass
+class ContentBlock:
+    """A single content block from an LLM response."""
+
+    type: str  # "text" or "tool_use"
+    text: str | None = None
+    tool_call: ToolCall | None = None
+
+
+@dataclass
+class LLMResponse:
+    """Full response from LLM — text + tool calls + metadata."""
+
+    content: list[ContentBlock]
+    stop_reason: str  # "end_turn", "tool_use", "max_tokens", "stop"
+
+    @property
+    def text(self) -> str:
+        """Combined text from all text blocks."""
+        parts = [b.text for b in self.content if b.type == "text" and b.text]
+        return "\n".join(parts)
+
+    @property
+    def tool_calls(self) -> list[ToolCall]:
+        """All tool_use blocks from the response."""
+        return [b.tool_call for b in self.content if b.type == "tool_use" and b.tool_call]
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return self.stop_reason == "tool_use" and len(self.tool_calls) > 0
 
 
 @dataclass

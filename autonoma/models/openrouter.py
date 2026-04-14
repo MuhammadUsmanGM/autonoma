@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 import httpx
 
 from autonoma.models.provider import LLMProvider
-from autonoma.schema import LLMMessage
+from autonoma.schema import ContentBlock, LLMMessage, LLMResponse, ToolCall
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -44,15 +44,11 @@ class OpenRouterProvider(LLMProvider):
         messages: list[LLMMessage],
         *,
         system_prompt: str | None = None,
+        tools: list[dict] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-    ) -> str:
-        api_messages = []
-        if system_prompt:
-            api_messages.append({"role": "system", "content": system_prompt})
-        for m in messages:
-            if m.role != "system":
-                api_messages.append({"role": m.role, "content": m.content})
+    ) -> LLMResponse:
+        api_messages = self._build_messages(messages, system_prompt)
 
         payload = {
             "model": self._model,
@@ -60,11 +56,14 @@ class OpenRouterProvider(LLMProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if tools:
+            # Convert Anthropic tool format to OpenAI format
+            payload["tools"] = self._convert_tools(tools)
 
         response = await self._client.post("/chat/completions", json=payload)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        return self._parse_response(data)
 
     async def stream(
         self,
@@ -74,12 +73,7 @@ class OpenRouterProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> AsyncIterator[str]:
-        api_messages = []
-        if system_prompt:
-            api_messages.append({"role": "system", "content": system_prompt})
-        for m in messages:
-            if m.role != "system":
-                api_messages.append({"role": m.role, "content": m.content})
+        api_messages = self._build_messages(messages, system_prompt)
 
         payload = {
             "model": self._model,
@@ -106,3 +100,83 @@ class OpenRouterProvider(LLMProvider):
                         yield content
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
+
+    def _build_messages(
+        self, messages: list[LLMMessage], system_prompt: str | None = None
+    ) -> list[dict]:
+        """Convert LLMMessage list to OpenAI API format."""
+        api_messages = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+
+        for m in messages:
+            if m.role == "system":
+                continue
+            if m.role == "tool":
+                # Tool result message
+                api_messages.append({
+                    "role": "tool",
+                    "tool_call_id": m.tool_call_id or "",
+                    "content": m.content if isinstance(m.content, str) else json.dumps(m.content),
+                })
+            elif isinstance(m.content, list):
+                # Structured content — convert to string for OpenAI format
+                text_parts = [
+                    b.get("text", "") for b in m.content if b.get("type") == "text"
+                ]
+                api_messages.append({"role": m.role, "content": "\n".join(text_parts)})
+            else:
+                api_messages.append({"role": m.role, "content": m.content})
+
+        return api_messages
+
+    def _convert_tools(self, anthropic_tools: list[dict]) -> list[dict]:
+        """Convert Anthropic tool format to OpenAI function-calling format."""
+        openai_tools = []
+        for tool in anthropic_tools:
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("input_schema", {}),
+                },
+            })
+        return openai_tools
+
+    def _parse_response(self, data: dict) -> LLMResponse:
+        """Parse OpenAI-format response into LLMResponse."""
+        choice = data["choices"][0]
+        message = choice["message"]
+        finish_reason = choice.get("finish_reason", "stop")
+
+        blocks: list[ContentBlock] = []
+
+        # Text content
+        if text := message.get("content"):
+            blocks.append(ContentBlock(type="text", text=text))
+
+        # Tool calls
+        if tool_calls := message.get("tool_calls"):
+            for tc in tool_calls:
+                func = tc["function"]
+                args = func.get("arguments", "{}")
+                if isinstance(args, str):
+                    args = json.loads(args)
+                tool_call = ToolCall(
+                    id=tc["id"],
+                    name=func["name"],
+                    input=args,
+                )
+                blocks.append(ContentBlock(type="tool_use", tool_call=tool_call))
+
+        # Map OpenAI finish reasons to our format
+        stop_reason = "end_turn"
+        if finish_reason == "tool_calls":
+            stop_reason = "tool_use"
+        elif finish_reason == "length":
+            stop_reason = "max_tokens"
+        elif tool_calls:
+            stop_reason = "tool_use"
+
+        return LLMResponse(content=blocks, stop_reason=stop_reason)
