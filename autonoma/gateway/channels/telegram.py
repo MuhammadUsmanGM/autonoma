@@ -20,6 +20,7 @@ class TelegramChannel(ChannelAdapter):
         self._config = config
         self._handler: MessageHandler | None = None
         self._app = None
+        self._polling = False
         self._stop_event = asyncio.Event()
 
     @property
@@ -79,18 +80,40 @@ class TelegramChannel(ChannelAdapter):
         self._app.add_handler(TGHandler(filters.TEXT & ~filters.COMMAND, on_message))
         self._app.add_error_handler(on_error)
 
-        await self._app.initialize()
-        await self._app.start()
-        await self._app.updater.start_polling(drop_pending_updates=True)
+        # Retry loop — Telegram API may be unreachable temporarily
+        max_retries = 5
+        for attempt in range(1, max_retries + 1):
+            try:
+                await self._app.initialize()
+                await self._app.start()
+                self._polling = True
+                await self._app.updater.start_polling(drop_pending_updates=True)
+                logger.info("Telegram bot started (long-polling)")
+                break
+            except Exception as exc:
+                logger.warning(
+                    "Telegram connect attempt %d/%d failed: %s",
+                    attempt, max_retries, exc,
+                )
+                if attempt == max_retries:
+                    logger.error(
+                        "Telegram bot failed to start after %d attempts. "
+                        "Check your network — can you reach https://api.telegram.org ?",
+                        max_retries,
+                    )
+                    return
+                delay = min(5 * attempt, 30)
+                logger.info("Retrying in %ds...", delay)
+                await asyncio.sleep(delay)
 
-        logger.info("Telegram bot started (long-polling)")
         await self._stop_event.wait()
 
     async def stop(self) -> None:
         self._stop_event.set()
         if self._app:
-            await self._app.updater.stop()
-            await self._app.stop()
+            if self._polling:
+                await self._app.updater.stop()
+                await self._app.stop()
             await self._app.shutdown()
 
     async def send(self, content: str) -> None:
