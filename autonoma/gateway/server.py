@@ -59,7 +59,7 @@ class GatewayServer:
         # Start all channel adapters
         for channel in self._channels.values():
             task = asyncio.create_task(
-                channel.start(self._router.handle_message),
+                self._run_channel(channel),
                 name=f"channel-{channel.name}",
             )
             self._channel_tasks.append(task)
@@ -86,6 +86,13 @@ class GatewayServer:
             await self._ws_server.wait_closed()
 
         logger.info("Gateway shutdown complete.")
+
+    async def _run_channel(self, channel: ChannelAdapter) -> None:
+        """Run a channel adapter with error logging so crashes aren't silent."""
+        try:
+            await channel.start(self._router.handle_message)
+        except Exception:
+            logger.exception("Channel '%s' crashed", channel.name)
 
     async def _handle_ws_connection(self, websocket, path=None) -> None:
         """Handle incoming WebSocket connections (minimal in Phase 1)."""
