@@ -27,6 +27,7 @@ class GatewayConfig:
 @dataclass
 class TelegramConfig:
     bot_token: str = ""
+    proxy_url: str = ""  # e.g. socks5://127.0.0.1:1080 or http://127.0.0.1:8080
     enabled: bool = False
 
 
@@ -130,6 +131,8 @@ def load_config(config_path: str | None = None) -> Config:
     if token := os.getenv("TELEGRAM_BOT_TOKEN"):
         config.channels.telegram.bot_token = token
         config.channels.telegram.enabled = True
+    if proxy := os.getenv("TELEGRAM_PROXY_URL"):
+        config.channels.telegram.proxy_url = proxy
 
     if token := os.getenv("DISCORD_BOT_TOKEN"):
         config.channels.discord.bot_token = token

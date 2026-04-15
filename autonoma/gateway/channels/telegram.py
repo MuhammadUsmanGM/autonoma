@@ -76,7 +76,13 @@ class TelegramChannel(ChannelAdapter):
         async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.error("Telegram error: %s", context.error, exc_info=context.error)
 
-        self._app = ApplicationBuilder().token(self._config.bot_token).build()
+        builder = ApplicationBuilder().token(self._config.bot_token)
+
+        if self._config.proxy_url:
+            logger.info("Telegram using proxy: %s", self._config.proxy_url)
+            builder = builder.proxy(self._config.proxy_url).get_updates_proxy(self._config.proxy_url)
+
+        self._app = builder.build()
         self._app.add_handler(TGHandler(filters.TEXT & ~filters.COMMAND, on_message))
         self._app.add_error_handler(on_error)
 
