@@ -32,7 +32,15 @@ class ContextAssembler:
         """
         # Load and fill SOUL.md template
         soul_template = await self._load_soul()
-        memory_context = await self._memory.get_memory_context()
+
+        # Extract user's latest message for query-based memory retrieval
+        user_query = ""
+        for entry in reversed(session_history):
+            if entry.role == "user":
+                user_query = entry.content
+                break
+
+        memory_context = await self._memory.get_memory_context(query=user_query)
         daily_log = await self._memory.get_daily_context()
 
         system_prompt = soul_template.replace(

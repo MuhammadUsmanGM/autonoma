@@ -22,6 +22,7 @@ env/
 
 # Project runtime data
 .session/
+.memory/
 workspace/memory/
 
 # WhatsApp bridge sidecar

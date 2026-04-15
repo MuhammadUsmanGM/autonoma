@@ -56,7 +56,7 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
     provider = create_provider(config.llm)
 
     # 4. Create memory store
-    memory_store = MemoryStore(config.workspace_dir)
+    memory_store = MemoryStore(config.workspace_dir, db_path=config.memory.db_path)
 
     # 5. Create session manager
     session_manager = SessionManager(config.session_dir)
@@ -130,7 +130,8 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
         logger.info("Gmail channel enabled")
 
     # 16. Start everything
-    async with MemoryFlusher(memory_store):
+    consolidation_interval = config.memory.decay_interval if config.memory.consolidation_enabled else 0
+    async with MemoryFlusher(memory_store, consolidation_interval=consolidation_interval):
         await server.start()
 
         try:

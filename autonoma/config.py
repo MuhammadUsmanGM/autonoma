@@ -71,11 +71,22 @@ class ChannelsConfig:
 
 
 @dataclass
+class MemoryConfig:
+    db_path: str = ".memory/autonoma.db"
+    max_context_memories: int = 15
+    decay_interval: int = 3600  # seconds between consolidation cycles
+    importance_threshold: float = 0.1  # archive below this
+    decay_factor: float = 0.95
+    consolidation_enabled: bool = True
+
+
+@dataclass
 class Config:
     name: str = "Autonoma"
     gateway: GatewayConfig = field(default_factory=GatewayConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     channels: ChannelsConfig = field(default_factory=ChannelsConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
     workspace_dir: str = "workspace"
     session_dir: str = ".session"
     log_level: str = "INFO"

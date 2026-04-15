@@ -101,6 +101,22 @@ class LLMOptions:
 
 
 @dataclass
+class MemoryEntry:
+    """A single memory record from the database."""
+
+    id: int
+    content: str
+    type: str  # "fact", "preference", "remember", "conversation_summary"
+    source: str
+    importance: float
+    created_at: str
+    accessed_at: str
+    access_count: int
+    active: bool = True
+    relevance_score: float = 0.0  # BM25 score, set during retrieval
+
+
+@dataclass
 class SessionEntry:
     """One line in a JSONL session file."""
 
