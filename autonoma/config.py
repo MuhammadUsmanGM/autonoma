@@ -21,6 +21,54 @@ class LLMConfig:
 class GatewayConfig:
     host: str = "127.0.0.1"
     port: int = 8765
+    http_port: int = 8766
+
+
+@dataclass
+class TelegramConfig:
+    bot_token: str = ""
+    enabled: bool = False
+
+
+@dataclass
+class DiscordConfig:
+    bot_token: str = ""
+    enabled: bool = False
+
+
+@dataclass
+class WhatsAppConfig:
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_phone_number: str = ""
+    webhook_path: str = "/webhook/whatsapp"
+    enabled: bool = False
+
+
+@dataclass
+class GmailConfig:
+    email_address: str = ""
+    app_password: str = ""
+    imap_host: str = "imap.gmail.com"
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    poll_interval: int = 30
+    enabled: bool = False
+
+
+@dataclass
+class RESTConfig:
+    enabled: bool = True
+    api_token: str = ""
+
+
+@dataclass
+class ChannelsConfig:
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    discord: DiscordConfig = field(default_factory=DiscordConfig)
+    whatsapp: WhatsAppConfig = field(default_factory=WhatsAppConfig)
+    gmail: GmailConfig = field(default_factory=GmailConfig)
+    rest: RESTConfig = field(default_factory=RESTConfig)
 
 
 @dataclass
@@ -28,6 +76,7 @@ class Config:
     name: str = "Autonoma"
     gateway: GatewayConfig = field(default_factory=GatewayConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    channels: ChannelsConfig = field(default_factory=ChannelsConfig)
     workspace_dir: str = "workspace"
     session_dir: str = ".session"
     log_level: str = "INFO"
@@ -75,5 +124,34 @@ def load_config(config_path: str | None = None) -> Config:
     # Override log level from environment
     if log_level := os.getenv("AUTONOMA_LOG_LEVEL"):
         config.log_level = log_level
+
+    # --- Channel auto-enable from env vars ---
+
+    if token := os.getenv("TELEGRAM_BOT_TOKEN"):
+        config.channels.telegram.bot_token = token
+        config.channels.telegram.enabled = True
+
+    if token := os.getenv("DISCORD_BOT_TOKEN"):
+        config.channels.discord.bot_token = token
+        config.channels.discord.enabled = True
+
+    sid = os.getenv("TWILIO_ACCOUNT_SID", "")
+    auth_tok = os.getenv("TWILIO_AUTH_TOKEN", "")
+    phone = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
+    if sid and auth_tok and phone:
+        config.channels.whatsapp.twilio_account_sid = sid
+        config.channels.whatsapp.twilio_auth_token = auth_tok
+        config.channels.whatsapp.twilio_phone_number = phone
+        config.channels.whatsapp.enabled = True
+
+    email_addr = os.getenv("GMAIL_ADDRESS", "")
+    app_pw = os.getenv("GMAIL_APP_PASSWORD", "")
+    if email_addr and app_pw:
+        config.channels.gmail.email_address = email_addr
+        config.channels.gmail.app_password = app_pw
+        config.channels.gmail.enabled = True
+
+    if token := os.getenv("AUTONOMA_REST_API_TOKEN"):
+        config.channels.rest.api_token = token
 
     return config

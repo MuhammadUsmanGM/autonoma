@@ -2,7 +2,8 @@ name: "Autonoma"
 
 gateway:
   host: "127.0.0.1"
-  port: 8765
+  port: 8765          # WebSocket
+  http_port: 8766     # REST API + webhooks
 
 llm:
   # provider options: "anthropic", "openrouter"
@@ -11,6 +12,14 @@ llm:
   # OpenRouter models: anthropic/claude-sonnet-4-6, openai/gpt-4o, google/gemini-2.0-flash-001
   # Anthropic models: claude-sonnet-4-6, claude-haiku-4-5-20251001
   model: "anthropic/claude-sonnet-4-6"
+
+# Channels auto-enable when env vars are set (see .env.example).
+# Override defaults here if needed:
+# channels:
+#   gmail:
+#     poll_interval: 60
+#   whatsapp:
+#     webhook_path: "/webhook/whatsapp"
 
 workspace_dir: "workspace"
 session_dir: ".session"

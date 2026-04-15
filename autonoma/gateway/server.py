@@ -17,17 +17,19 @@ logger = logging.getLogger(__name__)
 
 
 class GatewayServer:
-    """Manages the WebSocket server and all registered channel adapters."""
+    """Manages the WebSocket server, HTTP server, and all registered channel adapters."""
 
     def __init__(
         self,
         config: GatewayConfig,
         router: GatewayRouter,
         auth: AuthMiddleware,
+        http_server=None,
     ):
         self._config = config
         self._router = router
         self._auth = auth
+        self._http_server = http_server
         self._channels: dict[str, ChannelAdapter] = {}
         self._ws_server = None
         self._channel_tasks: list[asyncio.Task] = []
@@ -50,6 +52,10 @@ class GatewayServer:
             self._config.port,
         )
 
+        # Start HTTP server if configured
+        if self._http_server:
+            await self._http_server.start()
+
         # Start all channel adapters
         for channel in self._channels.values():
             task = asyncio.create_task(
@@ -69,6 +75,10 @@ class GatewayServer:
         # Cancel channel tasks
         for task in self._channel_tasks:
             task.cancel()
+
+        # Close HTTP server
+        if self._http_server:
+            await self._http_server.stop()
 
         # Close WebSocket server
         if self._ws_server:

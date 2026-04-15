@@ -18,6 +18,7 @@ from autonoma.gateway.auth import AuthMiddleware
 from autonoma.gateway.channels.cli import CLIChannel
 from autonoma.gateway.router import GatewayRouter
 from autonoma.gateway.server import GatewayServer
+from autonoma.gateway.channels._http_server import HTTPServer
 from autonoma.memory.flush import MemoryFlusher
 from autonoma.memory.store import MemoryStore
 from autonoma.models import create_provider
@@ -88,15 +89,47 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
     # 11. Create gateway router
     gateway_router = GatewayRouter(agent_router)
 
-    # 12. Create gateway server
-    auth = AuthMiddleware()
-    server = GatewayServer(config.gateway, gateway_router, auth)
+    # 12. Create HTTP server if any HTTP-based channels are enabled
+    http_server = None
+    ch = config.channels
+    if ch.rest.enabled or ch.whatsapp.enabled:
+        http_server = HTTPServer(host=config.gateway.host, port=config.gateway.http_port)
 
-    # 13. Register CLI channel
+    # 13. Create gateway server
+    auth = AuthMiddleware()
+    server = GatewayServer(config.gateway, gateway_router, auth, http_server=http_server)
+
+    # 14. Register CLI channel (always on)
     cli_channel = CLIChannel(agent_name=config.name)
     server.register_channel(cli_channel)
 
-    # 14. Start everything
+    # 15. Register optional channels (deferred imports)
+    if ch.rest.enabled and http_server:
+        from autonoma.gateway.channels.rest import RESTChannel
+        server.register_channel(RESTChannel(ch.rest, http_server))
+        logger.info("REST API channel enabled on port %d", config.gateway.http_port)
+
+    if ch.telegram.enabled:
+        from autonoma.gateway.channels.telegram import TelegramChannel
+        server.register_channel(TelegramChannel(ch.telegram))
+        logger.info("Telegram channel enabled")
+
+    if ch.discord.enabled:
+        from autonoma.gateway.channels.discord_channel import DiscordChannel
+        server.register_channel(DiscordChannel(ch.discord))
+        logger.info("Discord channel enabled")
+
+    if ch.whatsapp.enabled and http_server:
+        from autonoma.gateway.channels.whatsapp import WhatsAppChannel
+        server.register_channel(WhatsAppChannel(ch.whatsapp, http_server))
+        logger.info("WhatsApp channel enabled")
+
+    if ch.gmail.enabled:
+        from autonoma.gateway.channels.gmail import GmailChannel
+        server.register_channel(GmailChannel(ch.gmail))
+        logger.info("Gmail channel enabled")
+
+    # 16. Start everything
     async with MemoryFlusher(memory_store):
         await server.start()
 

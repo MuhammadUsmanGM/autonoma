@@ -17,6 +17,10 @@ dependencies = [
     "rich>=13.0",
 ]
 
+[project.optional-dependencies]
+telegram = ["python-telegram-bot>=22.0"]
+all-channels = ["python-telegram-bot>=22.0"]
+
 [project.scripts]
 autonoma = "autonoma.main:cli_entry"
 
