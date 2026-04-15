@@ -8,6 +8,7 @@
  *   BRIDGE_PORT          — HTTP port (default 3001)
  *   AUTONOMA_WEBHOOK_URL — Python webhook URL (default http://localhost:8766/webhook/whatsapp)
  *   PUPPETEER_EXECUTABLE_PATH — Custom Chromium path (optional)
+ *   WHATSAPP_PROXY_URL        — SOCKS5/HTTP proxy (e.g. socks5://154.13.149.118:1080)
  */
 
 const http = require("http");
@@ -23,10 +24,16 @@ let isReady = false;
 
 // --- WhatsApp Client ---
 
+const PROXY_URL = process.env.WHATSAPP_PROXY_URL || "";
+
 const puppeteerOpts = {
   headless: true,
   args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
 };
+
+if (PROXY_URL) {
+  puppeteerOpts.args.push(`--proxy-server=${PROXY_URL}`);
+}
 
 if (process.env.PUPPETEER_EXECUTABLE_PATH) {
   puppeteerOpts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -170,6 +177,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`[bridge] HTTP server listening on http://localhost:${PORT}`);
   console.log(`[bridge] Webhook target: ${WEBHOOK_URL}`);
+  if (PROXY_URL) console.log(`[bridge] Using proxy: ${PROXY_URL}`);
   console.log("[bridge] Initializing WhatsApp client...\n");
   client.initialize();
 });
