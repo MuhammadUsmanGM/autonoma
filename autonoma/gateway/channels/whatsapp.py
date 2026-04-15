@@ -1,8 +1,9 @@
-"""WhatsApp channel — Twilio API via httpx, webhook on shared HTTP server."""
+"""WhatsApp channel — talks to local whatsapp-web.js sidecar."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 import httpx
@@ -15,11 +16,9 @@ from autonoma.schema import Message
 
 logger = logging.getLogger(__name__)
 
-TWILIO_API = "https://api.twilio.com/2010-04-01"
-
 
 class WhatsAppChannel(ChannelAdapter):
-    """WhatsApp bot using Twilio REST API + inbound webhook."""
+    """WhatsApp channel via local whatsapp-web.js bridge sidecar."""
 
     def __init__(self, config: WhatsAppConfig, http_server: HTTPServer):
         self._config = config
@@ -45,47 +44,53 @@ class WhatsAppChannel(ChannelAdapter):
         await self._client.aclose()
 
     async def send(self, content: str) -> None:
-        pass
+        pass  # Proactive send needs a chat_id; not used in request/response flow
 
     async def _handle_webhook(self, request: dict) -> tuple[int, dict[str, str], str]:
-        """Handle inbound Twilio webhook (form-encoded POST)."""
-        form = request.get("form_data", {})
-        sender = form.get("From", "")
-        body = form.get("Body", "").strip()
+        """Handle inbound message from whatsapp-web.js sidecar (JSON POST)."""
+        headers = {"Content-Type": "application/json"}
+        data = request.get("json", {})
+
+        sender = data.get("from", "")
+        body = data.get("body", "").strip()
+        push_name = data.get("pushName", "")
 
         if not body:
-            return 200, {"Content-Type": "text/xml"}, "<Response></Response>"
+            return 200, headers, json.dumps({"status": "ignored"})
 
         message = Message(
             channel="whatsapp",
             channel_id=sender,
             user_id=sender,
-            user_name=form.get("ProfileName"),
+            user_name=push_name or None,
             content=body,
         )
 
-        response = await self._handler(message)
+        logger.info("WhatsApp message from %s: %s", push_name or sender, body[:80])
 
-        # Send reply via Twilio REST API
-        await self._send_twilio_message(sender, response.content)
-
-        # Return empty TwiML so Twilio doesn't send a duplicate
-        return 200, {"Content-Type": "text/xml"}, "<Response></Response>"
-
-    async def _send_twilio_message(self, to: str, body: str) -> None:
-        """Send a WhatsApp message via Twilio REST API."""
-        url = f"{TWILIO_API}/Accounts/{self._config.twilio_account_sid}/Messages.json"
-        auth = (self._config.twilio_account_sid, self._config.twilio_auth_token)
-
-        for chunk in split_message(body, max_len=1600):
-            resp = await self._client.post(
-                url,
-                auth=auth,
-                data={
-                    "From": self._config.twilio_phone_number,
-                    "To": to,
-                    "Body": chunk,
-                },
+        try:
+            response = await self._handler(message)
+            await self._send_bridge_message(sender, response.content)
+        except Exception:
+            logger.exception("Error handling WhatsApp message")
+            await self._send_bridge_message(
+                sender, "Sorry, something went wrong processing your message."
             )
-            if resp.status_code >= 400:
-                logger.error("Twilio send error %d: %s", resp.status_code, resp.text)
+
+        return 200, headers, json.dumps({"status": "ok"})
+
+    async def _send_bridge_message(self, chat_id: str, text: str) -> None:
+        """Send a message via the whatsapp-web.js bridge sidecar."""
+        url = f"{self._config.bridge_url}/send"
+
+        for chunk in split_message(text, max_len=4096):
+            try:
+                resp = await self._client.post(
+                    url, json={"chatId": chat_id, "text": chunk}
+                )
+                if resp.status_code >= 400:
+                    logger.error(
+                        "Bridge send error %d: %s", resp.status_code, resp.text
+                    )
+            except httpx.HTTPError as exc:
+                logger.error("Bridge send failed: %s", exc)

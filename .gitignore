@@ -24,6 +24,11 @@ env/
 .session/
 workspace/memory/
 
+# WhatsApp bridge sidecar
+whatsapp-bridge/node_modules/
+whatsapp-bridge/.wwebjs_auth/
+whatsapp-bridge/.wwebjs_cache/
+
 # OS
 .DS_Store
 *.log

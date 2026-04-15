@@ -19,6 +19,7 @@ llm:
 #   gmail:
 #     poll_interval: 60
 #   whatsapp:
+#     bridge_url: "http://localhost:3001"
 #     webhook_path: "/webhook/whatsapp"
 
 workspace_dir: "workspace"

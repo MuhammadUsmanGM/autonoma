@@ -39,9 +39,7 @@ class DiscordConfig:
 
 @dataclass
 class WhatsAppConfig:
-    twilio_account_sid: str = ""
-    twilio_auth_token: str = ""
-    twilio_phone_number: str = ""
+    bridge_url: str = "http://localhost:3001"
     webhook_path: str = "/webhook/whatsapp"
     enabled: bool = False
 
@@ -138,13 +136,8 @@ def load_config(config_path: str | None = None) -> Config:
         config.channels.discord.bot_token = token
         config.channels.discord.enabled = True
 
-    sid = os.getenv("TWILIO_ACCOUNT_SID", "")
-    auth_tok = os.getenv("TWILIO_AUTH_TOKEN", "")
-    phone = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
-    if sid and auth_tok and phone:
-        config.channels.whatsapp.twilio_account_sid = sid
-        config.channels.whatsapp.twilio_auth_token = auth_tok
-        config.channels.whatsapp.twilio_phone_number = phone
+    if bridge_url := os.getenv("WHATSAPP_BRIDGE_URL"):
+        config.channels.whatsapp.bridge_url = bridge_url
         config.channels.whatsapp.enabled = True
 
     email_addr = os.getenv("GMAIL_ADDRESS", "")
