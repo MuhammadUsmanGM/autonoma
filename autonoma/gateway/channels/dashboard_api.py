@@ -115,39 +115,33 @@ def register_dashboard_routes(
     async def handle_sessions(request: dict) -> tuple[int, dict[str, str], str]:
         headers = {"Content-Type": "application/json"}
         try:
+            path = request.get("path", "").split("?")[0].strip("/")
+            parts = path.split("/")  # ["api", "sessions"] or ["api", "sessions", "<id>"]
+
+            # Detail view: /api/sessions/<session_id>
+            if len(parts) >= 3:
+                session_id = "_".join(parts[2:])
+                history = await session_manager.load_history(session_id, limit=200)
+                entries = [
+                    {
+                        "role": e.role,
+                        "content": e.content,
+                        "channel": e.channel,
+                        "user_id": e.user_id,
+                        "timestamp": e.timestamp.isoformat(),
+                    }
+                    for e in history
+                ]
+                return 200, headers, json.dumps({"session_id": session_id, "messages": entries})
+
+            # List view: /api/sessions
             sessions = await session_manager.list_sessions()
-            # Enrich with channel info parsed from session ID
             for s in sessions:
-                parts = s["id"].split("_")
-                s["channel"] = parts[0] if parts else "unknown"
+                s_parts = s["id"].split("_")
+                s["channel"] = s_parts[0] if s_parts else "unknown"
             return 200, headers, json.dumps(sessions)
         except Exception as e:
             logger.error("Dashboard /api/sessions error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
-
-    async def handle_session_detail(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
-        try:
-            path = request.get("path", "")
-            # Extract session ID from path: /api/sessions/<id>
-            parts = path.strip("/").split("/")
-            if len(parts) < 3:
-                return 400, headers, json.dumps({"error": "Missing session ID"})
-            session_id = "/".join(parts[2:])  # Session IDs may have underscores
-            history = await session_manager.load_history(session_id, limit=200)
-            entries = [
-                {
-                    "role": e.role,
-                    "content": e.content,
-                    "channel": e.channel,
-                    "user_id": e.user_id,
-                    "timestamp": e.timestamp.isoformat(),
-                }
-                for e in history
-            ]
-            return 200, headers, json.dumps({"session_id": session_id, "messages": entries})
-        except Exception as e:
-            logger.error("Dashboard /api/sessions/<id> error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
     async def handle_chat(request: dict) -> tuple[int, dict[str, str], str]:
@@ -182,10 +176,9 @@ def register_dashboard_routes(
     http_server.add_route("GET", "/api/memories/search", handle_memories_search)
     http_server.add_route("DELETE", "/api/memories", handle_memory_delete)
     http_server.add_route("GET", "/api/sessions", handle_sessions)
-    http_server.add_route("GET", "/api/sessions/detail", handle_session_detail)
     http_server.add_route("POST", "/api/chat", handle_chat)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 7)
+    logger.info("Dashboard API routes registered (%d endpoints)", 6)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:
