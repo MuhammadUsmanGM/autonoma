@@ -2,7 +2,7 @@ import type { SessionMessage } from '../types'
 
 interface Props {
   sessionId: string
-  messages: SessionMessage[]
+  messages?: SessionMessage[]
 }
 
 function formatTime(iso: string): string {
@@ -12,7 +12,7 @@ function formatTime(iso: string): string {
   })
 }
 
-export default function SessionDetail({ sessionId, messages }: Props) {
+export default function SessionDetail({ sessionId, messages = [] }: Props) {
   return (
     <div>
       <div className="px-4 py-3 border-b border-[var(--border)]">
