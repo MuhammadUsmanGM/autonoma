@@ -1,0 +1,29 @@
+# Dev / runtime artifacts
+.git/
+.github/
+.claude/
+.session/
+.memory/
+.venv/
+*.egg-info/
+__pycache__/
+dist/
+build/
+
+# Dashboard and bridge node_modules
+dashboard/node_modules/
+whatsapp-bridge/node_modules/
+whatsapp-bridge/.wwebjs_auth/
+whatsapp-bridge/.wwebjs_cache/
+
+# Environment and secrets
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+*.log

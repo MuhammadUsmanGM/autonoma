@@ -12,6 +12,9 @@ build/
 venv/
 env/
 
+# npm
+node_modules/
+
 # Environment
 .env
 .env.local

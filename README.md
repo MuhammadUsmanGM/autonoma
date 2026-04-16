@@ -9,6 +9,7 @@
     <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React">
     <img src="https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
     <img src="https://img.shields.io/badge/SQLite-FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
+    <img src="https://img.shields.io/npm/v/autonoma-ai?style=flat-square&color=cb3837&logo=npm" alt="npm">
     <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square" alt="PRs Welcome">
   </p>
 </p>
@@ -64,19 +65,35 @@ Agent behavior is defined in `SOUL.md` — a human-readable personality file tha
 
 ## Quick Start
 
-```bash
-# Clone the repository
-git clone https://github.com/MuhammadUsmanGM/digital-fte.git
-cd digital-fte
+### Install via npm (recommended)
 
+```bash
+npm install -g autonoma-ai
+```
+
+This automatically sets up a Python virtual environment and installs all dependencies.
+
+```bash
 # Configure environment
 cp .env.example .env
 # Edit .env — add your API key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY)
 
-# Install Python dependencies
-pip install -e .
-
 # Run the agent
+autonoma
+```
+
+> **Requires:** Node.js 16+ and Python 3.11+
+
+### Install from source
+
+```bash
+git clone https://github.com/MuhammadUsmanGM/autonoma.git
+cd autonoma
+
+cp .env.example .env
+# Edit .env — add your API key
+
+pip install -e .
 python -m autonoma
 ```
 

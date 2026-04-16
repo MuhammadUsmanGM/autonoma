@@ -1,0 +1,57 @@
+{
+  "name": "autonoma-ai",
+  "version": "0.1.0",
+  "description": "AI agent platform with multi-channel support, intelligent memory, and real-time dashboard",
+  "bin": {
+    "autonoma": "./bin/autonoma.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "keywords": [
+    "ai-agent",
+    "llm",
+    "chatbot",
+    "ai-assistant",
+    "digital-employee",
+    "telegram-bot",
+    "discord-bot",
+    "whatsapp",
+    "openrouter",
+    "anthropic",
+    "claude",
+    "sqlite",
+    "dashboard",
+    "multi-channel",
+    "memory"
+  ],
+  "author": "Muhammad Usman",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MuhammadUsmanGM/autonoma.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MuhammadUsmanGM/autonoma/issues"
+  },
+  "homepage": "https://github.com/MuhammadUsmanGM/autonoma#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "files": [
+    "bin/",
+    "scripts/",
+    "autonoma/",
+    "workspace/SOUL.md",
+    "autonoma.yaml",
+    ".env.example",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE"
+  ]
+}
