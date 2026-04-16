@@ -89,11 +89,9 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
     # 11. Create gateway router
     gateway_router = GatewayRouter(agent_router)
 
-    # 12. Create HTTP server if any HTTP-based channels are enabled
-    http_server = None
+    # 12. Create HTTP server (always on — needed for dashboard API + channels)
     ch = config.channels
-    if ch.rest.enabled or ch.whatsapp.enabled:
-        http_server = HTTPServer(host=config.gateway.host, port=config.gateway.http_port)
+    http_server = HTTPServer(host=config.gateway.host, port=config.gateway.http_port)
 
     # 13. Create gateway server
     auth = AuthMiddleware()
@@ -104,7 +102,7 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
     server.register_channel(cli_channel)
 
     # 15. Register optional channels (deferred imports)
-    if ch.rest.enabled and http_server:
+    if ch.rest.enabled:
         from autonoma.gateway.channels.rest import RESTChannel
         server.register_channel(RESTChannel(ch.rest, http_server))
         logger.info("REST API channel enabled on port %d", config.gateway.http_port)
@@ -119,7 +117,7 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
         server.register_channel(DiscordChannel(ch.discord))
         logger.info("Discord channel enabled")
 
-    if ch.whatsapp.enabled and http_server:
+    if ch.whatsapp.enabled:
         from autonoma.gateway.channels.whatsapp import WhatsAppChannel
         server.register_channel(WhatsAppChannel(ch.whatsapp, http_server))
         logger.info("WhatsApp channel enabled")
@@ -129,7 +127,15 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
         server.register_channel(GmailChannel(ch.gmail))
         logger.info("Gmail channel enabled")
 
-    # 16. Start everything
+    # 16. Register dashboard API endpoints
+    active_channels = list(server._channels.keys())
+    from autonoma.gateway.channels.dashboard_api import register_dashboard_routes
+    register_dashboard_routes(
+        http_server, memory_store, session_manager,
+        gateway_router, active_channels,
+    )
+
+    # 17. Start everything
     consolidation_interval = config.memory.decay_interval if config.memory.consolidation_enabled else 0
     async with MemoryFlusher(memory_store, consolidation_interval=consolidation_interval):
         await server.start()

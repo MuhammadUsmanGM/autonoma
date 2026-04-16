@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 RouteHandler = Callable[[dict[str, Any]], Awaitable[tuple[int, dict[str, str], str]]]
 
 
+CORS_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+}
+
+
 class HTTPServer:
     """Minimal async HTTP server using asyncio.start_server."""
 
@@ -24,7 +33,11 @@ class HTTPServer:
         self._server: asyncio.Server | None = None
 
     def add_route(self, method: str, path: str, handler: RouteHandler) -> None:
-        """Register a route handler. Key format: 'POST /api/chat'."""
+        """Register a route handler. Key format: 'POST /api/chat'.
+
+        Routes are matched with longest-prefix: '/api/sessions/detail'
+        matches before '/api/sessions'.
+        """
         key = f"{method.upper()} {path}"
         self._routes[key] = handler
         logger.info("HTTP route registered: %s", key)
@@ -40,6 +53,29 @@ class HTTPServer:
             self._server.close()
             await self._server.wait_closed()
 
+    def _match_route(self, method: str, path: str) -> RouteHandler | None:
+        """Find a handler using exact match first, then longest-prefix match."""
+        # Strip query string for matching
+        clean = path.split("?")[0].rstrip("/") or "/"
+        key = f"{method} {clean}"
+        if key in self._routes:
+            return self._routes[key]
+        # Longest-prefix match (e.g. 'GET /api/sessions' matches '/api/sessions/xyz')
+        best: str = ""
+        for route_key in self._routes:
+            r_method, r_path = route_key.split(" ", 1)
+            if r_method != method:
+                continue
+            if clean.startswith(r_path) and len(r_path) > len(best):
+                best = r_path
+        return self._routes.get(f"{method} {best}") if best else None
+
+    def _cors_headers(self, origin: str) -> dict[str, str]:
+        """Return CORS headers if origin is allowed, else empty dict."""
+        if origin in CORS_ORIGINS:
+            return {"Access-Control-Allow-Origin": origin, **CORS_HEADERS}
+        return {}
+
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
@@ -49,14 +85,23 @@ class HTTPServer:
                 writer.close()
                 return
 
-            key = f"{request['method']} {request['path']}"
-            handler = self._routes.get(key)
+            origin = request.get("headers", {}).get("origin", "")
+            cors = self._cors_headers(origin)
+
+            # Handle CORS preflight
+            if request["method"] == "OPTIONS":
+                self._write_response(writer, 204, {**cors, "Content-Length": "0"}, "")
+                await writer.drain()
+                return
+
+            handler = self._match_route(request["method"], request["path"])
 
             if handler:
                 status, headers, body = await handler(request)
             else:
                 status, headers, body = 404, {"Content-Type": "application/json"}, json.dumps({"error": "Not found"})
 
+            headers.update(cors)
             self._write_response(writer, status, headers, body)
             await writer.drain()
         except Exception as e:
@@ -144,7 +189,7 @@ class HTTPServer:
         body: str,
     ) -> None:
         """Write an HTTP/1.1 response."""
-        reason = {200: "OK", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 500: "Internal Server Error"}.get(status, "OK")
+        reason = {200: "OK", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 500: "Internal Server Error"}.get(status, "OK")
         encoded_body = body.encode("utf-8")
         headers.setdefault("Content-Length", str(len(encoded_body)))
         headers.setdefault("Connection", "close")
