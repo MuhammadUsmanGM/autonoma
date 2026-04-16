@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from autonoma.executor.tools.base import BaseTool
+from autonoma.executor.tools.base import BaseTool, ToolPermission
 
 
 class FileReadTool(BaseTool):
@@ -18,6 +18,13 @@ class FileReadTool(BaseTool):
     @property
     def name(self) -> str:
         return "file_read"
+
+    @property
+    def permissions(self) -> ToolPermission:
+        return ToolPermission(
+            level="safe", filesystem=True,
+            description="Reads files within the sandboxed workspace directory.",
+        )
 
     @property
     def description(self) -> str:
@@ -72,6 +79,13 @@ class FileWriteTool(BaseTool):
     @property
     def name(self) -> str:
         return "file_write"
+
+    @property
+    def permissions(self) -> ToolPermission:
+        return ToolPermission(
+            level="cautious", filesystem=True,
+            description="Writes files within the sandboxed workspace directory.",
+        )
 
     @property
     def description(self) -> str:
@@ -134,6 +148,13 @@ class FileListTool(BaseTool):
     @property
     def name(self) -> str:
         return "file_list"
+
+    @property
+    def permissions(self) -> ToolPermission:
+        return ToolPermission(
+            level="safe", filesystem=True,
+            description="Lists files within the sandboxed workspace directory.",
+        )
 
     @property
     def description(self) -> str:

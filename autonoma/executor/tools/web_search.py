@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from autonoma.executor.tools.base import BaseTool
+from autonoma.executor.tools.base import BaseTool, ToolPermission
 
 
 class WebSearchTool(BaseTool):
@@ -17,6 +17,14 @@ class WebSearchTool(BaseTool):
     @property
     def name(self) -> str:
         return "web_search"
+
+    @property
+    def permissions(self) -> ToolPermission:
+        return ToolPermission(
+            level="cautious",
+            network=True,
+            description="Makes outbound HTTP requests to DuckDuckGo for search.",
+        )
 
     @property
     def description(self) -> str:

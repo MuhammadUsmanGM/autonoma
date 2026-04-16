@@ -9,6 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from autonoma.memory.database import MemoryDatabase
+from autonoma.memory.embeddings import EmbeddingProvider, create_embedding_provider
 from autonoma.memory.retrieval import MemoryRetriever
 from autonoma.schema import MemoryEntry, Message
 
@@ -27,7 +28,12 @@ ALL_TAGS_RE = re.compile(
 class MemoryStore:
     """Read/write interface for agent memory with SQLite + FTS5 backend."""
 
-    def __init__(self, workspace_dir: str, db_path: str | None = None):
+    def __init__(
+        self,
+        workspace_dir: str,
+        db_path: str | None = None,
+        embedding_provider: EmbeddingProvider | None = None,
+    ):
         self._workspace = Path(workspace_dir)
         self._memory_file = self._workspace / "MEMORY.md"
         self._daily_dir = self._workspace / "memory"
@@ -37,11 +43,20 @@ class MemoryStore:
         resolved = db_path or str(Path(".memory") / "autonoma.db")
         Path(resolved).parent.mkdir(parents=True, exist_ok=True)
         self._db = MemoryDatabase(resolved)
-        self._retriever = MemoryRetriever(self._db)
+
+        # Embedding provider (defaults to local hash-based if no API key)
+        self._embedder = embedding_provider or create_embedding_provider()
+        self._retriever = MemoryRetriever(
+            self._db, embedding_provider=self._embedder
+        )
 
     async def initialize(self) -> None:
-        """Run once at startup: migrate MEMORY.md into SQLite if needed."""
+        """Run once at startup: migrate MEMORY.md into SQLite if needed, backfill embeddings."""
         await asyncio.to_thread(self._migrate_if_needed)
+        # Backfill embeddings for any memories missing them
+        backfilled = await self._retriever.backfill_embeddings()
+        if backfilled:
+            logger.info("Backfilled %d memory embeddings on startup", backfilled)
 
     # --- Long-term memory (SQLite) ---
 
@@ -125,13 +140,11 @@ class MemoryStore:
     async def get_memory_context(self, query: str = "") -> str:
         """Build the memory context string for prompt assembly.
 
-        When query is provided, uses BM25 ranked retrieval.
+        When query is provided, uses hybrid BM25 + vector retrieval.
         Otherwise returns top memories by importance.
         """
         if query:
-            return await asyncio.to_thread(
-                self._retriever.retrieve_for_context, query
-            )
+            return await self._retriever.retrieve_for_context_hybrid(query)
         # Fallback: top memories by importance
         entries = await asyncio.to_thread(self._db.export_top_memories, limit=15)
         if not entries:
@@ -157,7 +170,24 @@ class MemoryStore:
         """Return memory database statistics."""
         total = await asyncio.to_thread(self._db.count, False)
         active = await asyncio.to_thread(self._db.count, True)
-        return {"total_active": active, "total_archived": total - active}
+        expiry_stats = await asyncio.to_thread(self._db.get_expiry_stats)
+        return {
+            "total_active": active,
+            "total_archived": total - active,
+            **expiry_stats,
+        }
+
+    async def get_stale_memories(self, limit: int = 50) -> list[dict]:
+        """Return memories flagged as stale for review."""
+        return await asyncio.to_thread(self._db.get_stale_memories, limit)
+
+    async def mark_reviewed(self, memory_id: int) -> None:
+        """Mark a stale memory as reviewed (confirmed valid)."""
+        await asyncio.to_thread(self._db.mark_reviewed, memory_id)
+
+    async def set_expiry(self, memory_id: int, expires_at: str | None = None) -> None:
+        """Set expiry date for a memory."""
+        await asyncio.to_thread(self._db.set_expiry, memory_id, expires_at)
 
     # --- Private helpers ---
 
@@ -177,10 +207,12 @@ class MemoryStore:
                     "Boosted existing memory %d instead of duplicate", best["id"]
                 )
             else:
-                await asyncio.to_thread(
+                mem_id = await asyncio.to_thread(
                     self._db.insert, content, type,
                     source="tag_extraction", importance=importance,
                 )
+                # Index embedding for the new memory
+                await self._retriever.index_memory(mem_id, content)
 
     def _migrate_if_needed(self) -> None:
         """Import MEMORY.md entries into SQLite on first run."""

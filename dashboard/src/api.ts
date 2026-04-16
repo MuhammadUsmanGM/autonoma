@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats } from './types'
 
 const BASE = '/api'
 
@@ -26,6 +26,19 @@ export const api = {
 
   getSessionDetail: (id: string) =>
     request<SessionDetail>(`/sessions/${id}`),
+
+  getTraces: (limit = 50) => request<TraceItem[]>(`/traces?limit=${limit}`),
+
+  getTrace: (id: string) => request<TraceItem>(`/traces/${id}`),
+
+  getTraceStats: () => request<TraceStats>('/traces/stats'),
+
+  getTasks: () => request<TaskItem[]>('/tasks'),
+
+  getTaskStats: () => request<TaskStats>('/tasks/stats'),
+
+  cancelTask: (id: string) =>
+    request<{ cancelled: string }>(`/tasks/${id}`, { method: 'DELETE' }),
 
   sendChat: async (message: string, sessionId?: string) => {
     const res = await fetch(`${BASE}/chat`, {

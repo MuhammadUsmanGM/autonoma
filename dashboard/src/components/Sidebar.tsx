@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity } from 'lucide-react'
 import type { Page } from '../types'
 
 const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] = [
@@ -6,6 +6,7 @@ const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] =
   { page: 'chat', label: 'Chat', icon: MessageSquare },
   { page: 'memory', label: 'Memory', icon: Brain },
   { page: 'sessions', label: 'Sessions', icon: History },
+  { page: 'traces', label: 'Traces', icon: Activity },
 ]
 
 interface Props {

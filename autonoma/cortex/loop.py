@@ -9,6 +9,7 @@ from typing import Any
 
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.session import SessionManager
+from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.memory.store import MemoryStore
 from autonoma.models.provider import LLMProvider
@@ -47,6 +48,7 @@ class AgentLoop:
         session_manager: SessionManager,
         tool_runner: ToolRunner | None = None,
         skill_registry: SkillRegistry | None = None,
+        trace_store: TraceStore | None = None,
     ):
         self._provider = provider
         self._context = context_assembler
@@ -54,12 +56,23 @@ class AgentLoop:
         self._sessions = session_manager
         self._tool_runner = tool_runner
         self._skill_registry = skill_registry
+        self._trace_store = trace_store
 
     async def process(self, message: Message, session_id: str) -> AgentResponse:
         """Run the full 9-stage pipeline."""
         start_time = time.time()
         trace: dict = {"session_id": session_id, "stages": {}}
         tool_trace: list[dict] = []
+
+        # Create structured trace if store is available
+        live_trace = None
+        if self._trace_store:
+            live_trace = self._trace_store.create_trace(
+                session_id=session_id,
+                channel=message.channel,
+                user_id=message.user_id,
+            )
+        self._current_live_trace = live_trace
 
         try:
             # Stage 0: VALIDATE
@@ -165,6 +178,12 @@ class AgentLoop:
                 elapsed, len(tool_trace), session_id,
             )
 
+            if live_trace:
+                live_trace.tool_calls = tool_trace
+                live_trace.complete(elapsed)
+                if self._trace_store:
+                    await self._trace_store.persist_trace(live_trace)
+
             return AgentResponse(
                 content=cleaned_response,
                 metadata={
@@ -177,6 +196,10 @@ class AgentLoop:
         except Exception as e:
             logger.error("Agent loop error: %s", e, exc_info=True)
             self._observe(trace, "error", {"error": str(e)})
+            if live_trace:
+                live_trace.fail(str(e), time.time() - start_time)
+                if self._trace_store:
+                    await self._trace_store.persist_trace(live_trace)
             return AgentResponse(
                 content="I encountered an error processing your message. Please try again.",
                 metadata={"error": str(e)},
@@ -268,4 +291,7 @@ class AgentLoop:
     def _observe(self, trace: dict, stage: str, data: dict) -> None:
         """Stage 8: Emit trace event (logged in Phase 1)."""
         trace["stages"][stage] = data
+        # Also populate the structured live trace if available
+        if hasattr(self, '_current_live_trace') and self._current_live_trace:
+            self._current_live_trace.add_span(stage, data)
         logger.debug("Stage [%s]: %s", stage, data)

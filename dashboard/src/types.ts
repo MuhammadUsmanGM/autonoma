@@ -46,4 +46,56 @@ export interface ChatMessage {
   timestamp: string
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions'
+export interface TraceSpan {
+  stage: string
+  data: Record<string, unknown>
+  timestamp: string
+}
+
+export interface TraceItem {
+  id: string
+  session_id: string
+  channel: string
+  user_id: string
+  started_at: string
+  completed_at: string | null
+  elapsed_seconds: number
+  status: 'running' | 'completed' | 'error'
+  spans: TraceSpan[]
+  tool_calls: Record<string, unknown>[]
+  error: string | null
+}
+
+export interface TraceStats {
+  total: number
+  completed: number
+  errors: number
+  running: number
+  avg_elapsed_seconds: number
+}
+
+export interface TaskItem {
+  id: string
+  name: string
+  priority: number
+  payload: Record<string, unknown>
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  result: string | null
+  error: string | null
+  retries: number
+  max_retries: number
+}
+
+export interface TaskStats {
+  total: number
+  pending: number
+  running: number
+  completed: number
+  failed: number
+  cancelled: number
+}
+
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces'

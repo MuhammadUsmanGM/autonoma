@@ -4,31 +4,70 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from autonoma.executor.sandbox import Sandbox
-from autonoma.executor.tools.base import BaseTool
+from autonoma.executor.tools.base import BaseTool, PermissionLevel
 from autonoma.schema import ToolCall, ToolResult
 
 logger = logging.getLogger(__name__)
 
 
 class ToolRunner:
-    """Dispatches tool calls to registered tools, enforces sandbox."""
+    """Dispatches tool calls to registered tools, enforces sandbox and permissions."""
 
-    def __init__(self, sandbox: Sandbox):
+    def __init__(
+        self,
+        sandbox: Sandbox,
+        max_permission_level: PermissionLevel = "dangerous",
+        blocked_permissions: set[str] | None = None,
+    ):
         self._sandbox = sandbox
         self._tools: dict[str, BaseTool] = {}
+        self._max_level = max_permission_level
+        self._blocked: set[str] = blocked_permissions or set()
+
+    # Permission level ordering for comparison
+    _LEVEL_ORDER: dict[str, int] = {"safe": 0, "cautious": 1, "dangerous": 2}
 
     def register(self, tool: BaseTool) -> None:
         self._tools[tool.name] = tool
-        logger.info("Registered tool: %s", tool.name)
+        perm = tool.permissions
+        logger.info(
+            "Registered tool: %s (level=%s, net=%s, fs=%s, shell=%s)",
+            tool.name, perm.level, perm.network, perm.filesystem, perm.shell,
+        )
 
     def get_tool(self, name: str) -> BaseTool | None:
         return self._tools.get(name)
 
     def list_tools(self) -> list[str]:
         return list(self._tools.keys())
+
+    def get_manifest(self) -> list[dict]:
+        """Export full permission manifest for all registered tools."""
+        return [tool.to_manifest() for tool in self._tools.values()]
+
+    def _check_permissions(self, tool: BaseTool) -> str | None:
+        """Validate tool permissions. Returns error message if blocked, None if allowed."""
+        perm = tool.permissions
+
+        # Check permission level ceiling
+        if self._LEVEL_ORDER.get(perm.level, 0) > self._LEVEL_ORDER.get(self._max_level, 2):
+            return (
+                f"Tool '{tool.name}' requires permission level '{perm.level}' "
+                f"but max allowed is '{self._max_level}'."
+            )
+
+        # Check specific blocked capabilities
+        for cap in ("network", "filesystem", "shell", "secrets"):
+            if getattr(perm, cap) and cap in self._blocked:
+                return (
+                    f"Tool '{tool.name}' requires '{cap}' permission "
+                    f"which is blocked by policy."
+                )
+
+        return None
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         """Execute a tool call and return the result."""
@@ -38,6 +77,16 @@ class ToolRunner:
             return ToolResult(
                 tool_use_id=tool_call.id,
                 content=f"Error: Unknown tool '{tool_call.name}'. Available tools: {', '.join(self._tools.keys())}",
+                is_error=True,
+            )
+
+        # Permission check
+        perm_error = self._check_permissions(tool)
+        if perm_error:
+            logger.warning("Permission denied for tool %s: %s", tool_call.name, perm_error)
+            return ToolResult(
+                tool_use_id=tool_call.id,
+                content=f"Error: {perm_error}",
                 is_error=True,
             )
 

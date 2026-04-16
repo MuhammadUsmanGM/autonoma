@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import struct
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -56,6 +58,30 @@ END;
 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
 CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(active);
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
+
+-- Memory expiry and staleness tracking
+CREATE TABLE IF NOT EXISTS memory_expiry (
+    memory_id     INTEGER PRIMARY KEY REFERENCES memories(id),
+    expires_at    TEXT,              -- ISO datetime, NULL = never expires
+    stale_at      TEXT,              -- when the memory was flagged stale
+    review_status TEXT NOT NULL DEFAULT 'active',  -- active, stale, expired, reviewed
+    last_reviewed TEXT,              -- when a user last confirmed/dismissed
+    staleness_reason TEXT DEFAULT '' -- why it was flagged
+);
+
+CREATE INDEX IF NOT EXISTS idx_expiry_status ON memory_expiry(review_status);
+CREATE INDEX IF NOT EXISTS idx_expiry_expires ON memory_expiry(expires_at);
+
+-- Embeddings table for vector search
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+    memory_id    INTEGER PRIMARY KEY REFERENCES memories(id),
+    embedding    BLOB NOT NULL,
+    dimensions   INTEGER NOT NULL,
+    provider     TEXT NOT NULL DEFAULT 'local',
+    created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_embeddings_memory ON memory_embeddings(memory_id);
 
 -- Schema version
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -262,9 +288,258 @@ class MemoryDatabase:
             row = self._conn.execute("SELECT COUNT(*) FROM memories").fetchone()
         return row[0]
 
+    # --- Expiry / staleness methods ---
+
+    def set_expiry(
+        self,
+        memory_id: int,
+        expires_at: str | None = None,
+    ) -> None:
+        """Set or update expiry for a memory."""
+        now = datetime.utcnow().isoformat()
+        self._conn.execute(
+            """INSERT INTO memory_expiry (memory_id, expires_at, review_status)
+               VALUES (?, ?, 'active')
+               ON CONFLICT(memory_id) DO UPDATE SET expires_at = ?""",
+            (memory_id, expires_at, expires_at),
+        )
+        self._conn.commit()
+
+    def flag_stale(
+        self, memory_id: int, reason: str = ""
+    ) -> None:
+        """Flag a memory as stale and needing review."""
+        now = datetime.utcnow().isoformat()
+        self._conn.execute(
+            """INSERT INTO memory_expiry (memory_id, stale_at, review_status, staleness_reason)
+               VALUES (?, ?, 'stale', ?)
+               ON CONFLICT(memory_id) DO UPDATE SET
+                   stale_at = ?, review_status = 'stale', staleness_reason = ?""",
+            (memory_id, now, reason, now, reason),
+        )
+        self._conn.commit()
+
+    def mark_reviewed(self, memory_id: int) -> None:
+        """Mark a stale memory as reviewed (confirmed still valid)."""
+        now = datetime.utcnow().isoformat()
+        self._conn.execute(
+            """UPDATE memory_expiry
+               SET review_status = 'reviewed', last_reviewed = ?, stale_at = NULL
+               WHERE memory_id = ?""",
+            (now, memory_id),
+        )
+        self._conn.commit()
+
+    def get_stale_memories(self, limit: int = 50) -> list[dict]:
+        """Return memories flagged as stale, joined with memory data."""
+        rows = self._conn.execute(
+            """SELECT m.*, e.stale_at, e.expires_at, e.review_status, e.staleness_reason
+               FROM memory_expiry e
+               JOIN memories m ON m.id = e.memory_id
+               WHERE e.review_status = 'stale' AND m.active = 1
+               ORDER BY e.stale_at ASC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_expired_memories(self) -> list[dict]:
+        """Return memories that have passed their expiry date."""
+        now = datetime.utcnow().isoformat()
+        rows = self._conn.execute(
+            """SELECT m.*, e.expires_at, e.review_status
+               FROM memory_expiry e
+               JOIN memories m ON m.id = e.memory_id
+               WHERE e.expires_at IS NOT NULL AND e.expires_at < ?
+                 AND m.active = 1 AND e.review_status != 'expired'
+               ORDER BY e.expires_at ASC""",
+            (now,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def expire_old_memories(self) -> int:
+        """Archive memories that have passed their expiry date. Returns count."""
+        now = datetime.utcnow().isoformat()
+        expired = self.get_expired_memories()
+        count = 0
+        for mem in expired:
+            self.soft_delete(mem["id"])
+            self._conn.execute(
+                "UPDATE memory_expiry SET review_status = 'expired' WHERE memory_id = ?",
+                (mem["id"],),
+            )
+            count += 1
+        if count:
+            self._conn.commit()
+        return count
+
+    def detect_stale_by_age(
+        self, max_age_days: int = 30, min_access_count: int = 0
+    ) -> int:
+        """Flag memories as stale if they haven't been accessed in N days
+        and have low access counts. Returns count flagged."""
+        from datetime import timedelta
+        cutoff = (datetime.utcnow() - timedelta(days=max_age_days)).isoformat()
+        # Find old, low-access memories not already flagged
+        rows = self._conn.execute(
+            """SELECT m.id, m.content, m.accessed_at, m.access_count
+               FROM memories m
+               LEFT JOIN memory_expiry e ON m.id = e.memory_id
+               WHERE m.active = 1
+                 AND m.accessed_at < ?
+                 AND m.access_count <= ?
+                 AND (e.review_status IS NULL OR e.review_status = 'active')""",
+            (cutoff, min_access_count),
+        ).fetchall()
+
+        count = 0
+        for row in rows:
+            reason = f"Not accessed in {max_age_days}+ days (last: {row['accessed_at'][:10]}, accesses: {row['access_count']})"
+            self.flag_stale(row["id"], reason)
+            count += 1
+        return count
+
+    def detect_stale_by_importance(self, threshold: float = 0.2) -> int:
+        """Flag low-importance memories as stale. Returns count flagged."""
+        rows = self._conn.execute(
+            """SELECT m.id, m.importance
+               FROM memories m
+               LEFT JOIN memory_expiry e ON m.id = e.memory_id
+               WHERE m.active = 1
+                 AND m.importance < ?
+                 AND m.importance > 0.1
+                 AND (e.review_status IS NULL OR e.review_status = 'active')""",
+            (threshold,),
+        ).fetchall()
+
+        count = 0
+        for row in rows:
+            reason = f"Low importance score: {row['importance']:.2f}"
+            self.flag_stale(row["id"], reason)
+            count += 1
+        return count
+
+    def get_expiry_stats(self) -> dict:
+        """Return expiry/staleness statistics."""
+        total_with_expiry = self._conn.execute(
+            "SELECT COUNT(*) FROM memory_expiry"
+        ).fetchone()[0]
+        stale = self._conn.execute(
+            "SELECT COUNT(*) FROM memory_expiry WHERE review_status = 'stale'"
+        ).fetchone()[0]
+        expired = self._conn.execute(
+            "SELECT COUNT(*) FROM memory_expiry WHERE review_status = 'expired'"
+        ).fetchone()[0]
+        reviewed = self._conn.execute(
+            "SELECT COUNT(*) FROM memory_expiry WHERE review_status = 'reviewed'"
+        ).fetchone()[0]
+        return {
+            "total_tracked": total_with_expiry,
+            "stale": stale,
+            "expired": expired,
+            "reviewed": reviewed,
+        }
+
+    # --- Embedding / vector search methods ---
+
+    def store_embedding(
+        self, memory_id: int, embedding: list[float], provider: str = "local"
+    ) -> None:
+        """Store an embedding vector for a memory."""
+        blob = _floats_to_blob(embedding)
+        now = datetime.utcnow().isoformat()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO memory_embeddings
+               (memory_id, embedding, dimensions, provider, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (memory_id, blob, len(embedding), provider, now),
+        )
+        self._conn.commit()
+
+    def get_embedding(self, memory_id: int) -> list[float] | None:
+        """Retrieve embedding for a memory."""
+        row = self._conn.execute(
+            "SELECT embedding, dimensions FROM memory_embeddings WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return _blob_to_floats(row[0], row[1])
+
+    def vector_search(
+        self,
+        query_embedding: list[float],
+        limit: int = 10,
+        active_only: bool = True,
+    ) -> list[dict]:
+        """Brute-force cosine similarity search over stored embeddings.
+
+        Returns memory rows with added 'cosine_score' field.
+        """
+        # Fetch all embeddings
+        sql = """
+            SELECT e.memory_id, e.embedding, e.dimensions, m.*
+            FROM memory_embeddings e
+            JOIN memories m ON m.id = e.memory_id
+        """
+        if active_only:
+            sql += " WHERE m.active = 1"
+
+        rows = self._conn.execute(sql).fetchall()
+        if not rows:
+            return []
+
+        scored = []
+        for row in rows:
+            row_dict = dict(row)
+            stored = _blob_to_floats(row_dict["embedding"], row_dict["dimensions"])
+            score = _cosine_similarity(query_embedding, stored)
+            row_dict["cosine_score"] = score
+            # Clean up embedding fields from result
+            del row_dict["embedding"]
+            del row_dict["dimensions"]
+            del row_dict["provider"]
+            scored.append(row_dict)
+
+        scored.sort(key=lambda x: x["cosine_score"], reverse=True)
+        return scored[:limit]
+
+    def get_memories_without_embeddings(self, limit: int = 100) -> list[dict]:
+        """Find active memories that don't have embeddings yet."""
+        rows = self._conn.execute(
+            """SELECT m.* FROM memories m
+               LEFT JOIN memory_embeddings e ON m.id = e.memory_id
+               WHERE m.active = 1 AND e.memory_id IS NULL
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def close(self) -> None:
         """Close the database connection."""
         self._conn.close()
+
+
+def _floats_to_blob(floats: list[float]) -> bytes:
+    """Pack a list of floats into a compact binary blob."""
+    return struct.pack(f"{len(floats)}f", *floats)
+
+
+def _blob_to_floats(blob: bytes, dimensions: int) -> list[float]:
+    """Unpack a binary blob back to floats."""
+    return list(struct.unpack(f"{dimensions}f", blob))
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    if len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 
 def _token_overlap(a: str, b: str) -> float:

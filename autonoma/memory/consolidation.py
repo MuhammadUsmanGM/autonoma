@@ -30,11 +30,17 @@ class MemoryConsolidator:
         """Execute one full consolidation cycle. Returns stats."""
         decayed, archived = self.decay_and_archive()
         deduped = self.deduplicate()
+        expired = self.expire_memories()
+        stale_age = self.detect_stale_memories()
+        stale_imp = self.detect_stale_by_importance()
         synced = self.sync_to_memory_md()
         stats = {
             "decayed": decayed,
             "archived": archived,
             "deduped": deduped,
+            "expired": expired,
+            "stale_flagged_age": stale_age,
+            "stale_flagged_importance": stale_imp,
             "synced": synced,
         }
         logger.info("Consolidation cycle: %s", stats)
@@ -86,6 +92,27 @@ class MemoryConsolidator:
         if deleted:
             logger.info("Deduplicated %d memories", deleted)
         return deleted
+
+    def expire_memories(self) -> int:
+        """Archive memories that have passed their expiry date."""
+        count = self._db.expire_old_memories()
+        if count:
+            logger.info("Expired %d memories past their expiry date", count)
+        return count
+
+    def detect_stale_memories(self, max_age_days: int = 30) -> int:
+        """Flag memories as stale if not accessed recently."""
+        count = self._db.detect_stale_by_age(max_age_days=max_age_days)
+        if count:
+            logger.info("Flagged %d memories as stale (age-based)", count)
+        return count
+
+    def detect_stale_by_importance(self, threshold: float = 0.2) -> int:
+        """Flag low-importance memories as stale for review."""
+        count = self._db.detect_stale_by_importance(threshold=threshold)
+        if count:
+            logger.info("Flagged %d memories as stale (low importance)", count)
+        return count
 
     def sync_to_memory_md(self) -> int:
         """Export top memories to MEMORY.md as a human-readable snapshot."""

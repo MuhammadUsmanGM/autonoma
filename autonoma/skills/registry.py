@@ -38,3 +38,7 @@ class SkillRegistry:
         for tool in self._tools.values():
             lines.append(f"- **{tool.name}**: {tool.description}")
         return "\n".join(lines)
+
+    def get_permission_manifest(self) -> list[dict[str, Any]]:
+        """Export full permission manifest for all registered tools."""
+        return [tool.to_manifest() for tool in self._tools.values()]

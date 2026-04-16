@@ -5,6 +5,7 @@ import Overview from './pages/Overview'
 import Chat from './pages/Chat'
 import Memory from './pages/Memory'
 import Sessions from './pages/Sessions'
+import Traces from './pages/Traces'
 import type { Page } from './types'
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
         {page === 'chat' && <Chat />}
         {page === 'memory' && <Memory />}
         {page === 'sessions' && <Sessions />}
+        {page === 'traces' && <Traces />}
       </main>
       <Toaster
         theme="dark"

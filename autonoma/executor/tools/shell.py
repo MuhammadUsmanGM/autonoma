@@ -6,7 +6,7 @@ import asyncio
 import shlex
 from typing import Any
 
-from autonoma.executor.tools.base import BaseTool
+from autonoma.executor.tools.base import BaseTool, ToolPermission
 
 # Commands that are always blocked
 BLOCKED_COMMANDS = {
@@ -36,6 +36,16 @@ class ShellTool(BaseTool):
     @property
     def name(self) -> str:
         return "shell"
+
+    @property
+    def permissions(self) -> ToolPermission:
+        return ToolPermission(
+            level="dangerous",
+            shell=True,
+            filesystem=True,
+            network=True,
+            description="Executes arbitrary shell commands. Blocked-command list limits risk.",
+        )
 
     @property
     def description(self) -> str:

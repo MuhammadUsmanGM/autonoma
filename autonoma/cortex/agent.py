@@ -8,6 +8,7 @@ from autonoma.config import Config
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.loop import AgentLoop
 from autonoma.cortex.session import SessionManager
+from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.memory.store import MemoryStore
 from autonoma.models.provider import LLMProvider
@@ -29,11 +30,13 @@ class Agent:
         context_assembler: ContextAssembler,
         tool_runner: ToolRunner | None = None,
         skill_registry: SkillRegistry | None = None,
+        trace_store: TraceStore | None = None,
     ):
         self.name = config.name
         self._loop = AgentLoop(
             provider, context_assembler, memory_store, session_manager,
             tool_runner=tool_runner, skill_registry=skill_registry,
+            trace_store=trace_store,
         )
         self._sessions = session_manager
         self._active_sessions: dict[str, str] = {}  # channel_id -> session_id

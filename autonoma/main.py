@@ -12,7 +12,9 @@ from autonoma.cortex.agent import Agent
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.router import AgentRouter
 from autonoma.cortex.session import SessionManager
+from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.sandbox import Sandbox
+from autonoma.executor.task_queue import TaskQueue, Priority
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.gateway.auth import AuthMiddleware
 from autonoma.gateway.channels.cli import CLIChannel
@@ -68,6 +70,15 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
     sandbox = Sandbox(allowed_dirs=[config.workspace_dir], timeout=30.0)
     tool_runner = ToolRunner(sandbox)
 
+    # 8a. Create trace store
+    trace_store = TraceStore(persist_dir=str(Path(config.session_dir) / "traces"))
+
+    # 8b. Create task queue
+    task_queue = TaskQueue(
+        persist_path=str(Path(config.session_dir) / "task_queue.json"),
+        max_concurrent=3,
+    )
+
     # 8. Load skills and register tools
     skill_registry = SkillRegistry()
     for tool in load_builtin_tools(workspace_dir=config.workspace_dir):
@@ -80,6 +91,7 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
     agent = Agent(
         config, provider, memory_store, session_manager, context_assembler,
         tool_runner=tool_runner, skill_registry=skill_registry,
+        trace_store=trace_store,
     )
 
     # 10. Create agent router
@@ -133,11 +145,15 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
     register_dashboard_routes(
         http_server, memory_store, session_manager,
         gateway_router, active_channels,
+        task_queue=task_queue,
+        trace_store=trace_store,
+        skill_registry=skill_registry,
     )
 
     # 17. Start everything
     consolidation_interval = config.memory.decay_interval if config.memory.consolidation_enabled else 0
     async with MemoryFlusher(memory_store, consolidation_interval=consolidation_interval):
+        await task_queue.start()
         await server.start()
 
         try:
@@ -145,6 +161,7 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            await task_queue.stop()
             await server.stop()
 
     logger.info("Autonoma shut down cleanly.")

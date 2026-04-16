@@ -25,6 +25,9 @@ def register_dashboard_routes(
     session_manager: SessionManager,
     gateway_router: GatewayRouter,
     active_channels: list[str],
+    task_queue=None,
+    trace_store=None,
+    skill_registry=None,
 ) -> None:
     """Register all dashboard API routes on the HTTP server."""
 
@@ -170,15 +173,163 @@ def register_dashboard_routes(
             logger.error("Dashboard /api/chat error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    # --- Trace endpoints ---
+
+    async def handle_traces(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if not trace_store:
+            return 200, headers, json.dumps([])
+        try:
+            path = request.get("path", "")
+            clean = path.split("?")[0].strip("/")
+            parts = clean.split("/")
+
+            # Detail: /api/traces/<trace_id>
+            if len(parts) >= 3 and parts[2] != "stats":
+                trace_id = parts[2]
+                trace = trace_store.get_trace(trace_id)
+                if not trace:
+                    return 404, headers, json.dumps({"error": "Trace not found"})
+                return 200, headers, json.dumps(trace)
+
+            # List: /api/traces
+            limit = 50
+            status = None
+            if "?" in path:
+                qs = path.split("?", 1)[1]
+                params = dict(p.split("=", 1) for p in qs.split("&") if "=" in p)
+                limit = int(params.get("limit", "50"))
+                status = params.get("status")
+            traces = trace_store.list_traces(limit=limit, status=status)
+            return 200, headers, json.dumps(traces)
+        except Exception as e:
+            logger.error("Dashboard /api/traces error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_trace_stats(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if not trace_store:
+            return 200, headers, json.dumps({})
+        try:
+            return 200, headers, json.dumps(trace_store.get_stats())
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
+    # --- Task queue endpoints ---
+
+    async def handle_tasks(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if not task_queue:
+            return 200, headers, json.dumps([])
+        try:
+            path = request.get("path", "")
+            clean = path.split("?")[0].strip("/")
+            parts = clean.split("/")
+
+            # Detail: /api/tasks/<task_id>
+            if len(parts) >= 3 and parts[2] != "stats":
+                task_id = parts[2]
+                task = task_queue.get_task(task_id)
+                if not task:
+                    return 404, headers, json.dumps({"error": "Task not found"})
+                return 200, headers, json.dumps(task.to_dict())
+
+            # List: /api/tasks
+            status_filter = None
+            if "?" in path:
+                qs = path.split("?", 1)[1]
+                params = dict(p.split("=", 1) for p in qs.split("&") if "=" in p)
+                status_filter = params.get("status")
+            tasks = task_queue.list_tasks(status=status_filter)
+            return 200, headers, json.dumps([t.to_dict() for t in tasks])
+        except Exception as e:
+            logger.error("Dashboard /api/tasks error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_task_stats(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if not task_queue:
+            return 200, headers, json.dumps({})
+        try:
+            return 200, headers, json.dumps(task_queue.get_stats())
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_task_cancel(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if not task_queue:
+            return 404, headers, json.dumps({"error": "Task queue not available"})
+        try:
+            path = request.get("path", "")
+            parts = path.strip("/").split("/")
+            if len(parts) < 3:
+                return 400, headers, json.dumps({"error": "Missing task ID"})
+            task_id = parts[2]
+            if task_queue.cancel_task(task_id):
+                return 200, headers, json.dumps({"cancelled": task_id})
+            return 400, headers, json.dumps({"error": "Task not cancellable"})
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
+    # --- Stale memories endpoint ---
+
+    async def handle_stale_memories(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        try:
+            stale = await memory_store.get_stale_memories(limit=100)
+            return 200, headers, json.dumps(stale)
+        except Exception as e:
+            logger.error("Dashboard /api/memories/stale error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_review_memory(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/memories/review — mark a stale memory as reviewed."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            data = request.get("json", {})
+            memory_id = data.get("memory_id")
+            action = data.get("action", "review")  # "review" or "dismiss"
+            if not memory_id:
+                return 400, headers, json.dumps({"error": "Missing memory_id"})
+            if action == "dismiss":
+                await asyncio.to_thread(memory_store._db.soft_delete, int(memory_id))
+                return 200, headers, json.dumps({"dismissed": memory_id})
+            else:
+                await memory_store.mark_reviewed(int(memory_id))
+                return 200, headers, json.dumps({"reviewed": memory_id})
+        except Exception as e:
+            logger.error("Dashboard /api/memories/review error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    # --- Skill manifest endpoint ---
+
+    async def handle_manifest(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if not skill_registry:
+            return 200, headers, json.dumps([])
+        try:
+            manifest = skill_registry.get_permission_manifest()
+            return 200, headers, json.dumps(manifest)
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
     # Register routes
+    http_server.add_route("GET", "/api/skills/manifest", handle_manifest)
+    http_server.add_route("GET", "/api/memories/stale", handle_stale_memories)
+    http_server.add_route("POST", "/api/memories/review", handle_review_memory)
     http_server.add_route("GET", "/api/stats", handle_stats)
     http_server.add_route("GET", "/api/memories", handle_memories)
     http_server.add_route("GET", "/api/memories/search", handle_memories_search)
     http_server.add_route("DELETE", "/api/memories", handle_memory_delete)
     http_server.add_route("GET", "/api/sessions", handle_sessions)
     http_server.add_route("POST", "/api/chat", handle_chat)
+    http_server.add_route("GET", "/api/traces", handle_traces)
+    http_server.add_route("GET", "/api/traces/stats", handle_trace_stats)
+    http_server.add_route("GET", "/api/tasks", handle_tasks)
+    http_server.add_route("GET", "/api/tasks/stats", handle_task_stats)
+    http_server.add_route("DELETE", "/api/tasks", handle_task_cancel)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 6)
+    logger.info("Dashboard API routes registered (%d endpoints)", 14)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:
