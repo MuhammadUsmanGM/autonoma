@@ -25,11 +25,12 @@ from autonoma.config import load_config, save_yaml_config
 from autonoma.runtime import AgentRunner, LogRingBuffer, install_logging
 
 BANNER = r"""
-    ___         __
-   /   | __  __/ /_____  ____  ____  ____ ___  ____ _
-  / /| |/ / / / __/ __ \/ __ \/ __ \/ __ `__ \/ __ `/
- / ___ / /_/ / /_/ /_/ / / / / /_/ / / / / / / /_/ /
-/_/  |_\__,_/\__/\____/_/ /_/\____/_/ /_/ /_/\__,_/
+ █████╗ ██╗   ██╗████████╗ ██████╗ ███╗   ██╗ ██████╗ ███╗   ███╗ █████╗ 
+██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗████╗  ██║██╔═══██╗████╗ ████║██╔══██╗
+███████║██║   ██║   ██║   ██║   ██║██╔██╗ ██║██║   ██║██╔████╔██║███████║
+██╔══██║██║   ██║   ██║   ██║   ██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║
+██║  ██║╚██████╔╝   ██║   ╚██████╔╝██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║
+╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝
 """
 
 def _resolve_workspace() -> Path:
@@ -112,15 +113,18 @@ def read_key(timeout: float | None = None) -> str:
                 time.sleep(0.005)
             return msvcrt.getch()
 
-        # Initial wait if timeout given
-        if timeout is not None:
+        # Initial block (wait forever if timeout is None)
+        if timeout is None:
+            while not msvcrt.kbhit():
+                time.sleep(0.01)
+            ch = msvcrt.getch()
+        else:
             deadline = time.time() + timeout
             while not msvcrt.kbhit():
                 if time.time() >= deadline:
                     return ""
                 time.sleep(0.01)
-        
-        ch = msvcrt.getch()
+            ch = msvcrt.getch()
         
         # Ctrl+C
         if ch == b"\x03":
@@ -142,16 +146,18 @@ def read_key(timeout: float | None = None) -> str:
 
         # VT Escape sequences (Modern Windows Terminal)
         if ch == b"\x1b":
-            # Peek for '['
+            # Peek for '[' or 'O'
             next_ch = _getch_timeout(40)
-            if next_ch != b"[":
+            if next_ch not in (b"[", b"O"):
                 return KEY_ESC
             
             # Peek for the command char
             cmd = _getch_timeout(40)
             if not cmd:
                 return KEY_ESC
-                
+            
+            # CSI sequences: \x1b[ [ABCD]
+            # SS3 sequences: \x1bO [ABCD]
             arrows = {
                 b"A": KEY_UP, b"B": KEY_DOWN,
                 b"C": KEY_RIGHT, b"D": KEY_LEFT,
@@ -160,11 +166,15 @@ def read_key(timeout: float | None = None) -> str:
             if cmd in arrows:
                 return arrows[cmd]
             
-            # Multi-char VT (like PgUp/PgDn: 5~ / 6~)
-            if cmd in (b"5", b"6"):
+            # Multi-char VT (like PgUp/PgDn: 5~ / 6~ / 2~ / 3~)
+            if b"0" <= cmd <= b"9":
                 # Consume the trailing '~' if it arrives quickly
                 _getch_timeout(20)
-                return KEY_PGUP if cmd == b"5" else KEY_PGDN
+                return {
+                    b"5": KEY_PGUP, b"6": KEY_PGDN,
+                    b"1": KEY_HOME, b"4": KEY_END,
+                    b"2": "INS", b"3": "DEL",
+                }.get(cmd, KEY_ESC)
             
             return KEY_ESC
 
@@ -496,7 +506,8 @@ class AutonomaTUI:
         """Open the manage menu. Agent must be stopped to change config safely."""
         was_running = self.runner is not None and self.runner.is_running()
         if was_running and self.runner is not None:
-            self.console.clear()
+            # Bug fix: use a temporary group for the stopping message instead of a full clear
+            # that fights with the next _arrow_select alternate buffer.
             self.console.print(
                 Panel(
                     "[yellow]Stopping agent to safely change configuration…[/]",
@@ -846,7 +857,6 @@ class AutonomaTUI:
         if not items:
             return None
         
-        # Initial cleanup
         if selected < 0:
             selected = max(0, len(items) + selected)
         if selected >= len(items):
@@ -855,10 +865,8 @@ class AutonomaTUI:
         def render():
             content = []
             if header_renderer:
-                # Capture header output into a Group
-                # Note: header_renderer usually prints directly.
-                # To make this proper for Live, we should have it return a renderable.
-                # For now, we'll just let it print BEFORE the Live block or clear inside.
+                # Note: header_renderer usually prints. 
+                # For proper Live support, we avoid clearing inside and just let it render.
                 pass
             
             if title:
@@ -880,13 +888,17 @@ class AutonomaTUI:
             
             return Group(*content)
 
-        # Clear once at entry
-        self.console.clear()
-        if header_renderer:
-            header_renderer()
-
-        with Live(render(), console=self.console, refresh_per_second=10) as live:
+        # Use screen=True to prevent the "shuffling" effect. 
+        # This opens the TUI in an alternate buffer that clears on exit.
+        with Live(None, console=self.console, refresh_per_second=10, screen=True) as live:
             while True:
+                # We render manually here because header_renderer migth print multiple lines
+                self.console.clear()
+                if header_renderer:
+                    header_renderer()
+                
+                live.update(render())
+                
                 key = read_key()
                 if key == KEY_CTRL_C:
                     raise KeyboardInterrupt
@@ -898,9 +910,6 @@ class AutonomaTUI:
                     selected = (selected + 1) % len(items)
                 elif key == KEY_ENTER:
                     return selected
-                
-                # Update the live display
-                live.update(render())
 
     def _print_banner(self) -> None:
         self.console.print(Align.center(Text(BANNER, style="bold cyan")))
