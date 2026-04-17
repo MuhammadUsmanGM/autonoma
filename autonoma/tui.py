@@ -313,16 +313,23 @@ class AutonomaTUI:
 
     def _logs_viewer(self) -> None:
         """Fullscreen live-tailing log view. ESC or Q to exit."""
+        refresh_hz = 6
+        tick = 1.0 / refresh_hz
         with Live(
             self._render_logs(tail_only=True, scroll=0),
             console=self.console,
-            refresh_per_second=6,
+            refresh_per_second=refresh_hz,
             screen=True,
         ) as live:
             scroll = 0
             follow = True  # auto-scroll to bottom
             while True:
-                key = read_key(timeout=0.3)
+                # Key poll timeout matches the refresh tick so we always hand
+                # Live a fresh renderable on every frame — without this, logs
+                # appear frozen between keypresses because Live re-renders the
+                # same Group it was last handed.
+                key = read_key(timeout=tick)
+
                 if key == KEY_ESC or key == "q":
                     break
                 if key == KEY_CTRL_C:
@@ -348,6 +355,8 @@ class AutonomaTUI:
                         self.log_ring.clear()
                     scroll = 0; follow = True
 
+                # Always push a fresh renderable — whether a key was pressed
+                # or the timeout fired — so newly arrived log lines stream in.
                 live.update(self._render_logs(tail_only=follow, scroll=scroll))
 
     def _render_logs(self, *, tail_only: bool, scroll: int):
