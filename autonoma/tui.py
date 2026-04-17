@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import os
+import re
 import sys
 import time
 import webbrowser
@@ -793,15 +794,26 @@ class AutonomaTUI:
         set_key(str(ENV_PATH), key, value, quote_mode="never")
         os.environ[key] = value
 
+    @staticmethod
+    def _env_line_pattern(key: str) -> re.Pattern[str]:
+        """Match a dotenv assignment for `key` with optional `export ` prefix
+        and optional whitespace around `=`. Returns a compiled pattern whose
+        match() anchors at the start of a stripped line."""
+        return re.compile(rf"^(?:export\s+)?{re.escape(key)}\s*=")
+
     def _disable_env(self, key: str) -> bool:
         if not ENV_PATH.exists():
             return False
         lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        pattern = self._env_line_pattern(key)
         changed = False
         new_lines = []
         for line in lines:
             stripped = line.lstrip()
-            if stripped.startswith(f"{key}=") and not stripped.startswith("#"):
+            if stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+            if pattern.match(stripped):
                 new_lines.append(f"# {line}")
                 changed = True
             else:
@@ -815,18 +827,21 @@ class AutonomaTUI:
         if not ENV_PATH.exists():
             return False
         lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        pattern = self._env_line_pattern(key)
         changed = False
         new_lines = []
         for line in lines:
             stripped = line.lstrip()
-            if stripped.startswith("#"):
-                body = stripped.lstrip("#").lstrip()
-                if body.startswith(f"{key}="):
-                    new_lines.append(body)
-                    changed = True
-                    _, _, val = body.partition("=")
-                    os.environ[key] = val.strip().strip('"').strip("'")
-                    continue
+            if not stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+            body = stripped.lstrip("#").lstrip()
+            if pattern.match(body):
+                new_lines.append(body)
+                changed = True
+                _, _, val = body.partition("=")
+                os.environ[key] = val.strip().strip('"').strip("'")
+                continue
             new_lines.append(line)
         if changed:
             ENV_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
