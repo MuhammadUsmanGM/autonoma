@@ -14,17 +14,17 @@ function formatTime(iso: string): string {
 
 export default function SessionDetail({ sessionId, messages = [] }: Props) {
   return (
-    <div>
-      <div className="px-4 py-3 border-b border-[var(--border)]">
-        <p className="text-sm font-medium">Session</p>
-        <p className="text-xs text-[var(--text-muted)] font-mono mt-0.5">{sessionId}</p>
+    <div className="h-full flex flex-col min-h-0">
+      <div className="px-6 py-4 border-b border-[var(--border)] shrink-0 bg-white/[0.01]">
+        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Active Resonance Link</span>
+        <p className="text-xs text-white font-mono mt-1 opacity-40 truncate">{sessionId}</p>
       </div>
 
-      <div className="p-4 space-y-3 max-h-[calc(100vh-14rem)] overflow-y-auto">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
         {messages.length === 0 && (
-          <p className="text-sm text-[var(--text-muted)] text-center py-8">
-            Empty session.
-          </p>
+          <div className="h-full flex flex-col items-center justify-center text-center py-20 opacity-20">
+            <p className="text-xs font-bold uppercase tracking-widest">No data packet detected</p>
+          </div>
         )}
         {messages.map((msg, i) => (
           <div
@@ -32,18 +32,20 @@ export default function SessionDetail({ sessionId, messages = [] }: Props) {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+              className={`max-w-[85%] px-5 py-3.5 rounded-2xl text-[13px] leading-relaxed break-words shadow-lg ${
                 msg.role === 'user'
-                  ? 'bg-[var(--accent)] text-black rounded-br-md'
-                  : 'bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] rounded-bl-md'
+                  ? 'bg-[var(--accent)] text-black rounded-br-none font-medium'
+                  : 'glass border border-white/5 text-white/90 rounded-bl-none'
               }`}
             >
               <p className="whitespace-pre-wrap">{msg.content}</p>
-              <p className={`text-[10px] mt-1 ${
-                msg.role === 'user' ? 'text-black/50' : 'text-[var(--text-muted)]'
+              <div className={`flex items-center gap-2 mt-2 text-[9px] font-bold uppercase tracking-tighter ${
+                msg.role === 'user' ? 'text-black/40' : 'text-white/20'
               }`}>
-                {formatTime(msg.timestamp)}
-              </p>
+                <span>{msg.role === 'user' ? 'Human' : 'Agent'}</span>
+                <span>•</span>
+                <span>{formatTime(msg.timestamp)}</span>
+              </div>
             </div>
           </div>
         ))}
