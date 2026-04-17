@@ -13,10 +13,19 @@ function App() {
   const [page, setPage] = useState<Page>('overview')
 
   return (
-    <div className="flex h-screen bg-[var(--bg)] text-[var(--text)] overflow-hidden font-sans">
+    <div className="flex h-screen bg-[var(--bg)] text-[var(--text)] overflow-hidden font-sans relative">
+      {/* Background Watermark */}
+      <div className="fixed -bottom-24 -right-24 w-[600px] h-[600px] opacity-[0.03] pointer-events-none select-none z-0">
+        <img 
+          src="/favicon.webp" 
+          alt="" 
+          className="w-full h-full object-contain grayscale blur-[2px]" 
+        />
+      </div>
+
       <Sidebar current={page} onChange={setPage} />
       
-      <main className="flex-1 relative overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 relative overflow-y-auto overflow-x-hidden z-10">
         <AnimatePresence mode="wait">
           <motion.div
             key={page}
