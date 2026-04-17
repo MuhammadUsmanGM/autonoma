@@ -3,6 +3,9 @@ import type { Memory } from '../types'
 
 interface Props {
   memories: Memory[]
+  selectedIds: number[]
+  onToggleSelect: (id: number) => void
+  onToggleAll: () => void
   onDelete: (id: number) => void
 }
 
@@ -13,20 +16,30 @@ const TYPE_COLORS: Record<string, string> = {
   conversation_summary: 'bg-green-500/15 text-green-400 border-green-500/20',
 }
 
-export default function MemoryTable({ memories, onDelete }: Props) {
+export default function MemoryTable({ memories, selectedIds, onToggleSelect, onToggleAll, onDelete }: Props) {
   if (memories.length === 0) {
     return (
       <p className="text-sm text-[var(--text-muted)] py-8 text-center">
-        No memories found.
+        No memories found in the current residency.
       </p>
     )
   }
+
+  const allSelected = memories.length > 0 && memories.every(m => selectedIds.includes(m.id))
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[var(--border)] text-left text-[var(--text-muted)] bg-white/[0.01]">
+            <th className="py-4 px-6 w-10">
+              <input 
+                type="checkbox" 
+                checked={allSelected} 
+                onChange={onToggleAll}
+                className="w-4 h-4 rounded border-white/10 bg-black/40 accent-[var(--accent)] cursor-pointer"
+              />
+            </th>
             <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px]">Transmission</th>
             <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-28">Protocol</th>
             <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-24 text-right">Weight</th>
@@ -35,39 +48,50 @@ export default function MemoryTable({ memories, onDelete }: Props) {
           </tr>
         </thead>
         <tbody className="divide-y divide-white/[0.02]">
-          {memories.map((m) => (
-            <tr
-              key={m.id}
-              className="hover:bg-white/[0.03] transition-all group"
-            >
-              <td className="py-4 px-6 max-w-md">
-                <p className="text-white/80 group-hover:text-white transition-colors line-clamp-2">{m.content}</p>
-              </td>
-              <td className="py-4 px-6">
-                <span
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
-                    TYPE_COLORS[m.type] || TYPE_COLORS.remember
-                  }`}
-                >
-                  {m.type.replace('_', ' ')}
-                </span>
-              </td>
-              <td className="py-4 px-6 text-right font-mono text-[11px] text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors">
-                {m.importance.toFixed(3)}
-              </td>
-              <td className="py-4 px-6 text-right text-[11px] text-[var(--text-muted)]">
-                {new Date(m.created_at || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' })}
-              </td>
-              <td className="py-4 px-6 text-right">
-                <button
-                  onClick={() => onDelete(m.id)}
-                  className="p-2 rounded-xl hover:bg-red-500/20 text-white/20 hover:text-red-400 transition-all cursor-pointer"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </td>
-            </tr>
-          ))}
+          {memories.map((m) => {
+            const isSelected = selectedIds.includes(m.id)
+            return (
+              <tr
+                key={m.id}
+                className={`transition-all group ${isSelected ? 'bg-[var(--accent-dim)]/20' : 'hover:bg-white/[0.03]'}`}
+              >
+                <td className="py-4 px-6">
+                  <input 
+                    type="checkbox" 
+                    checked={isSelected} 
+                    onChange={() => onToggleSelect(m.id)}
+                    className="w-4 h-4 rounded border-white/10 bg-black/40 accent-[var(--accent)] cursor-pointer"
+                  />
+                </td>
+                <td className="py-4 px-6 max-w-md">
+                  <p className={`transition-colors line-clamp-2 ${isSelected ? 'text-white font-medium' : 'text-white/80 group-hover:text-white'}`}>{m.content}</p>
+                </td>
+                <td className="py-4 px-6">
+                  <span
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
+                      TYPE_COLORS[m.type] || TYPE_COLORS.remember
+                    }`}
+                  >
+                    {m.type.replace('_', ' ')}
+                  </span>
+                </td>
+                <td className="py-4 px-6 text-right font-mono text-[11px] text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors">
+                  {m.importance.toFixed(3)}
+                </td>
+                <td className="py-4 px-6 text-right text-[11px] text-[var(--text-muted)]">
+                  {new Date(m.created_at || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' })}
+                </td>
+                <td className="py-4 px-6 text-right">
+                  <button
+                    onClick={() => onDelete(m.id)}
+                    className="p-2 rounded-xl hover:bg-red-500/20 text-white/20 hover:text-red-400 transition-all cursor-pointer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

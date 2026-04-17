@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
-import { Search, RefreshCw, Sparkles } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { useEffect, useState, useCallback, useMemo } from 'react'
+import { Search, RefreshCw, Sparkles, Trash2, CheckSquare, X } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { api } from '../api'
 import MemoryTable from '../components/MemoryTable'
@@ -12,10 +12,10 @@ const TYPES = ['all', 'remember', 'fact', 'preference', 'conversation_summary', 
 export default function MemoryPage() {
   const [memories, setMemories] = useState<Memory[]>([])
   const [stale, setStale] = useState<Memory[]>([])
-  const [filtered, setFiltered] = useState<Memory[]>([])
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -36,15 +36,14 @@ export default function MemoryPage() {
 
   useEffect(() => { load() }, [load])
 
-  useEffect(() => {
+  const filtered = useMemo(() => {
     if (typeFilter === 'maintenance') {
       let res = stale
       if (search.trim()) {
         const q = search.toLowerCase()
         res = res.filter(m => m.content.toLowerCase().includes(q))
       }
-      setFiltered(res)
-      return
+      return res
     }
 
     let result = memories
@@ -55,7 +54,7 @@ export default function MemoryPage() {
       const q = search.toLowerCase()
       result = result.filter((m) => m.content.toLowerCase().includes(q))
     }
-    setFiltered(result)
+    return result
   }, [memories, stale, typeFilter, search])
 
   const handleDelete = async (id: number) => {
@@ -63,6 +62,7 @@ export default function MemoryPage() {
       await api.deleteMemory(id)
       setMemories((prev) => prev.filter((m) => m.id !== id))
       setStale((prev) => prev.filter((m) => m.id !== id))
+      setSelectedIds((prev) => prev.filter(i => i !== id))
       toast.success('Neural path pruned')
     } catch {
       toast.error('Failed to prune memory')
@@ -73,9 +73,10 @@ export default function MemoryPage() {
     try {
       await api.reviewMemory(id, action)
       setStale((prev) => prev.filter((m) => m.id !== id))
+      setSelectedIds((prev) => prev.filter(i => i !== id))
       if (action === 'review') {
         toast.success('Cognitive node reinforced')
-        load() // Reload regular memories to show the updated access time
+        load() 
       } else {
         toast.success('Information discarded')
       }
@@ -84,20 +85,61 @@ export default function MemoryPage() {
     }
   }
 
+  const bulkDelete = async () => {
+    const count = selectedIds.length
+    if (count === 0) return
+    const promise = Promise.all(selectedIds.map(id => api.deleteMemory(id)))
+    toast.promise(promise, {
+      loading: `Pruning ${count} neural nodes...`,
+      success: () => {
+        setMemories(prev => prev.filter(m => !selectedIds.includes(m.id)))
+        setStale(prev => prev.filter(m => !selectedIds.includes(m.id)))
+        setSelectedIds([])
+        return `${count} paths removed from registry`
+      },
+      error: 'Bulk pruning failed'
+    })
+  }
+
+  const onToggleSelect = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
+  }
+
+  const onToggleAll = () => {
+    const currentPageIds = filtered.map(m => m.id)
+    const allSelected = currentPageIds.every(id => selectedIds.includes(id))
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !currentPageIds.includes(id)))
+    } else {
+      setSelectedIds(prev => Array.from(new Set([...prev, ...currentPageIds])))
+    }
+  }
+
   return (
-    <div className="p-10 space-y-8">
+    <div className="p-10 space-y-8 pb-32">
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Cognitive Explorer</h2>
           <p className="text-sm text-[var(--text-muted)]">Browse and manage the agent's neural resonance</p>
         </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors cursor-pointer"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Sync Registry
-        </button>
+        <div className="flex items-center gap-3">
+          {typeFilter === 'maintenance' && filtered.length > 0 && (
+             <button
+              onClick={() => setSelectedIds(filtered.map(m => m.id))}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--accent-dim)] border border-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent-dim)]/40 transition-colors cursor-pointer"
+            >
+              <CheckSquare size={14} />
+              Select All Stale
+            </button>
+          )}
+          <button
+            onClick={load}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors cursor-pointer"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Sync Registry
+          </button>
+        </div>
       </header>
 
       {/* Filters Overlay */}
@@ -120,7 +162,7 @@ export default function MemoryPage() {
             return (
               <button
                 key={t}
-                onClick={() => setTypeFilter(t)}
+                onClick={() => { setTypeFilter(t); setSelectedIds([]) }}
                 className={`relative px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer whitespace-nowrap min-w-fit ${
                   active ? 'text-black' : 'text-[var(--text-muted)] hover:text-white'
                 }`}
@@ -152,34 +194,48 @@ export default function MemoryPage() {
         </div>
       ) : typeFilter === 'maintenance' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {filtered.map((m) => (
-            <motion.div 
-              key={m.id}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="rounded-2xl reflective p-6 flex flex-col gap-4 border border-[var(--accent)]/10"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest">Decaying node</span>
-                <span className="text-[10px] text-[var(--text-muted)]">ID: #{m.id}</span>
-              </div>
-              <p className="text-sm text-white/90 leading-relaxed italic">"{m.content}"</p>
-              <div className="mt-auto flex items-center justify-end gap-3 pt-4 border-t border-white/5">
-                <button 
-                  onClick={() => handleReview(m.id, 'dismiss')}
-                  className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
-                >
-                  Prune
-                </button>
-                <button 
-                  onClick={() => handleReview(m.id, 'review')}
-                  className="px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-[var(--accent)] text-black hover:scale-105 active:scale-95 transition-all"
-                >
-                  Reinforce
-                </button>
-              </div>
-            </motion.div>
-          ))}
+          {filtered.map((m) => {
+            const isSelected = selectedIds.includes(m.id)
+            return (
+              <motion.div 
+                key={m.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                onClick={() => onToggleSelect(m.id)}
+                className={`rounded-2xl reflective p-6 flex flex-col gap-4 border cursor-pointer transition-all ${
+                  isSelected ? 'border-[var(--accent)] bg-[var(--accent-dim)]/20 shadow-[0_0_20px_var(--accent-glow)]' : 'border-[var(--accent)]/10'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox" 
+                      checked={isSelected}
+                      readOnly
+                      className="w-3.5 h-3.5 rounded border-white/10 bg-black/40 accent-[var(--accent)]"
+                    />
+                    <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest">Decaying node</span>
+                  </div>
+                  <span className="text-[10px] text-[var(--text-muted)]">ID: #{m.id}</span>
+                </div>
+                <p className="text-sm text-white/90 leading-relaxed italic">"{m.content}"</p>
+                <div className="mt-auto flex items-center justify-end gap-3 pt-4 border-t border-white/5" onClick={e => e.stopPropagation()}>
+                  <button 
+                    onClick={() => handleReview(m.id, 'dismiss')}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
+                  >
+                    Prune
+                  </button>
+                  <button 
+                    onClick={() => handleReview(m.id, 'review')}
+                    className="px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-[var(--accent)] text-black hover:scale-105 active:scale-95 transition-all"
+                  >
+                    Reinforce
+                  </button>
+                </div>
+              </motion.div>
+            )
+          })}
           {filtered.length === 0 && (
             <div className="col-span-full py-20 text-center rounded-3xl reflective border border-dashed border-white/10">
               <Sparkles className="mx-auto mb-4 text-[var(--accent)]/20" size={40} />
@@ -197,9 +253,53 @@ export default function MemoryPage() {
             <span className="text-xs font-bold text-white uppercase tracking-widest">Memory Matrix</span>
             <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight">{filtered.length} nodes active</span>
           </div>
-          <MemoryTable memories={filtered} onDelete={handleDelete} />
+          <MemoryTable 
+            memories={filtered} 
+            selectedIds={selectedIds}
+            onToggleSelect={onToggleSelect}
+            onToggleAll={onToggleAll}
+            onDelete={handleDelete} 
+          />
         </motion.div>
       )}
+
+      {/* Bulk actions bar */}
+      <AnimatePresence>
+        {selectedIds.length > 0 && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 px-8 py-4 glass rounded-3xl border border-[var(--accent)]/50 shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-8"
+          >
+            <div className="flex items-center gap-4 border-r border-white/10 pr-8">
+              <div className="w-10 h-10 rounded-2xl bg-[var(--accent)] text-black flex items-center justify-center font-bold text-lg">
+                {selectedIds.length}
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white">Nodes targeted</h4>
+                <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Batch execution ready</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={bulkDelete}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-white text-black hover:bg-white/90 transition-all cursor-pointer"
+              >
+                <Trash2 size={16} />
+                Prune Selected
+              </button>
+              <button 
+                onClick={() => setSelectedIds([])}
+                className="p-2.5 rounded-xl glass hover:bg-white/5 transition-all text-white/40 hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

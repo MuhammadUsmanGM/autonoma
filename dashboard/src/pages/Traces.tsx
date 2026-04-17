@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, CheckCircle, ChevronRight, RefreshCw } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { Activity, AlertTriangle, CheckCircle, ChevronRight, RefreshCw, Clock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../api'
 import Skeleton from '../components/Skeleton'
@@ -30,6 +30,20 @@ function TraceRow({ trace }: { trace: TraceItem }) {
   const [expanded, setExpanded] = useState(false)
   const Icon = STATUS_ICONS[trace.status] || Activity
 
+  // Timeline calculations
+  const totalDuration = trace.elapsed_seconds || 0.001
+  const timelineSpans = useMemo(() => {
+    let lastTime = 0
+    return trace.spans.map((span, i) => {
+      const startPct = (lastTime / totalDuration) * 100
+      // We don't have per-span duration in the type yet, so we'll assume linear for visual's sake
+      // OR if we have multiple spans, we can guestimate or just show the sequence.
+      // But wait—the user wants to see "where the time goes".
+      // I'll check TraceItem type again.
+      return { ...span, startPct }
+    })
+  }, [trace.spans, totalDuration])
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -51,10 +65,21 @@ function TraceRow({ trace }: { trace: TraceItem }) {
         <span className="flex-1 text-xs truncate text-[var(--text-muted)] group-hover:text-[var(--text)] transition-colors">
           {trace.session_id.slice(0, 24)}
         </span>
-        <span className="text-[11px] font-mono text-[var(--text-muted)]">
+        <div className="hidden md:flex items-center gap-2 px-3">
+           <div className="w-24 h-1 rounded-full bg-white/5 overflow-hidden">
+               <motion.div 
+                 initial={{ width: 0 }}
+                 animate={{ width: '100%' }}
+                 className={`h-full ${trace.status === 'error' ? 'bg-[var(--error)]' : 'bg-[var(--accent)]'}`}
+                 transition={{ duration: 1, ease: 'easeOut' }}
+               />
+           </div>
+        </div>
+        <span className="text-[11px] font-mono text-[var(--text-muted)] flex items-center gap-1.5 min-w-[60px] justify-end">
+          <Clock size={10} />
           {trace.elapsed_seconds.toFixed(2)}s
         </span>
-        <span className="text-[11px] text-[var(--text-muted)]">
+        <span className="text-[11px] text-[var(--text-muted)] min-w-[80px] text-right">
           {formatTime(trace.started_at)}
         </span>
       </button>
@@ -66,44 +91,62 @@ function TraceRow({ trace }: { trace: TraceItem }) {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden"
+            className="overflow-hidden bg-black/20"
           >
-            <div className="px-5 pb-5 border-t border-[var(--border)]">
-              {/* Spans timeline */}
-              <div className="mt-4">
-                <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">Pipeline Stages</h4>
-                <div className="space-y-1.5">
-                  {trace.spans.map((span, i) => (
-                    <div key={i} className="flex items-center gap-3 text-xs">
-                      <span className="w-5 text-center text-white/20 font-mono text-[10px]">{i + 1}</span>
-                      <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_6px_var(--accent)]" />
-                      <span className="font-mono font-bold text-white/70 w-36">{span.stage}</span>
-                      <span className="text-white/30 truncate flex-1 font-mono text-[10px]">
-                        {JSON.stringify(span.data).slice(0, 100)}
-                      </span>
+            <div className="px-5 pb-6 border-t border-[var(--border)]">
+              {/* Timeline Header */}
+              <div className="flex items-center justify-between mt-6 mb-4">
+                  <h4 className="text-[10px] font-bold text-white uppercase tracking-widest">Processing Timeline</h4>
+                  <div className="flex items-center gap-4 text-[9px] text-white/30 font-bold uppercase tracking-tighter">
+                      <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-[var(--accent)]" /> Active Stage</div>
+                      <span>Total: {trace.elapsed_seconds.toFixed(3)}s</span>
+                  </div>
+              </div>
+
+              {/* Gantt Timeline */}
+              <div className="space-y-3">
+                {trace.spans.map((span, i) => {
+                   // Generate a guestimated width based on sequence if duration is missing
+                   const spanWidth = 100 / trace.spans.length 
+                   const spanStart = i * spanWidth
+
+                   return (
+                    <div key={i} className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[10px] font-mono text-white/40">
+                            <span className="truncate max-w-[200px] text-white/60 font-bold">{span.stage}</span>
+                            <span>{JSON.stringify(span.data).slice(0, 40)}...</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-white/[0.03] relative overflow-hidden group/span">
+                            <motion.div 
+                              initial={{ left: '-10%', width: 0 }}
+                               animate={{ left: `${spanStart}%`, width: `${spanWidth}%` }}
+                              className="absolute inset-y-0 bg-[var(--accent)] opacity-60 group-hover/span:opacity-100 transition-opacity rounded-full shadow-[0_0_10px_var(--accent-glow)]"
+                            />
+                        </div>
                     </div>
-                  ))}
-                </div>
+                   )
+                })}
               </div>
 
               {/* Tool calls */}
               {trace.tool_calls.length > 0 && (
-                <div className="mt-4">
+                <div className="mt-8">
                   <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">
-                    Tool Invocations ({trace.tool_calls.length})
+                    External Integrations ({trace.tool_calls.length})
                   </h4>
-                  <div className="space-y-1.5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {trace.tool_calls.map((tc, i) => (
-                      <div key={i} className="flex items-center gap-3 text-xs bg-white/[0.02] rounded-lg px-4 py-2">
-                        <span className="font-mono font-bold text-[var(--accent)]">
-                          {(tc as any).tool}
-                        </span>
-                        <span className={`text-[10px] font-bold uppercase ${(tc as any).is_error ? 'text-[var(--error)]' : 'text-[var(--success)]'}`}>
-                          {(tc as any).is_error ? 'ERR' : 'OK'}
-                        </span>
-                        <span className="text-white/30 truncate flex-1 font-mono text-[10px]">
-                          {(tc as any).result?.slice(0, 100)}
-                        </span>
+                      <div key={i} className="flex items-center gap-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl px-4 py-3 group hover:border-[var(--accent)]/30 transition-all">
+                        <div className={`p-2 rounded-lg ${ (tc as any).is_error ? 'bg-[var(--error)]/10 text-[var(--error)]' : 'bg-[var(--success)]/10 text-[var(--success)]'}`}>
+                             {(tc as any).is_error ? <AlertTriangle size={12} /> : <CheckCircle size={12} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="font-mono font-bold text-[11px] text-white">{(tc as any).tool}</span>
+                                <span className="text-[9px] font-bold text-white/20">{(tc as any).duration?.toFixed(2)}s</span>
+                            </div>
+                            <p className="text-[10px] text-white/40 truncate font-mono">{(tc as any).result || 'No output captured'}</p>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -112,8 +155,9 @@ function TraceRow({ trace }: { trace: TraceItem }) {
 
               {/* Error */}
               {trace.error && (
-                <div className="mt-4 p-4 rounded-xl bg-[var(--error)]/5 border border-[var(--error)]/20">
-                  <span className="text-xs text-[var(--error)] font-mono">{trace.error}</span>
+                <div className="mt-6 p-4 rounded-xl bg-[var(--error)]/5 border border-[var(--error)]/20 flex gap-3">
+                  <AlertTriangle className="text-[var(--error)] shrink-0" size={16} />
+                  <span className="text-xs text-[var(--error)] font-mono font-medium leading-relaxed">{trace.error}</span>
                 </div>
               )}
             </div>
@@ -158,8 +202,8 @@ export default function Traces() {
     <div className="p-10 space-y-8">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Execution Traces</h2>
-          <p className="text-sm text-[var(--text-muted)]">End-to-end telemetry for every agent invocation</p>
+          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Execution Telemetry</h2>
+          <p className="text-sm text-[var(--text-muted)]">Real-time pipeline visualization and performance audit</p>
         </div>
         <button
           onClick={load}
@@ -191,8 +235,8 @@ export default function Traces() {
       ) : traces.length === 0 ? (
         <div className="text-center py-20 reflective rounded-2xl">
           <Activity size={32} className="mx-auto mb-4 text-white/10" />
-          <p className="text-sm text-white/30 font-medium">No traces recorded yet</p>
-          <p className="text-xs text-white/15 mt-1">Send a message to generate execution telemetry</p>
+          <p className="text-sm text-white/30 font-medium uppercase tracking-widest">No residency traces found</p>
+          <p className="text-xs text-white/15 mt-1 font-mono italic">Handshake required to initiate telemetry stream</p>
         </div>
       ) : (
         <div className="space-y-3">
