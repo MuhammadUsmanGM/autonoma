@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Search, RefreshCw } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { api } from '../api'
 import MemoryTable from '../components/MemoryTable'
 import type { Memory } from '../types'
+import Skeleton from '../components/Skeleton'
 
 const TYPES = ['all', 'remember', 'fact', 'preference', 'conversation_summary']
 
@@ -29,7 +31,6 @@ export default function MemoryPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Apply filters
   useEffect(() => {
     let result = memories
     if (typeFilter !== 'all') {
@@ -53,57 +54,76 @@ export default function MemoryPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold">Memory Explorer</h2>
+    <div className="p-10 space-y-8">
+      <header className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Cognitive Explorer</h2>
+          <p className="text-sm text-[var(--text-muted)]">Browse and manage long-term agent memories</p>
+        </div>
         <button
           onClick={load}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-white/5 transition-colors cursor-pointer"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
+          Refresh Registry
         </button>
-      </div>
+      </header>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+      {/* Filters Overlay */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="relative flex-1 group">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] group-focus-within:text-[var(--accent)] transition-colors" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter memories..."
-            className="w-full bg-[var(--bg-card)] border border-[var(--border)] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)] transition-colors"
+            placeholder="Search within neural paths..."
+            className="w-full bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl pl-12 pr-4 py-3 text-sm text-[var(--text)] placeholder:text-white/20 outline-none focus:border-[var(--accent)]/40 focus:ring-1 focus:ring-[var(--accent)]/20 transition-all shadow-xl"
           />
         </div>
-        <div className="flex gap-1.5">
-          {TYPES.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                typeFilter === t
-                  ? 'bg-[var(--accent-dim)] text-[var(--accent)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-white/5'
-              }`}
-            >
-              {t === 'all' ? 'All' : t}
-            </button>
-          ))}
+        
+        <div className="p-1 bg-white/[0.03] border border-[var(--border)] rounded-2xl flex gap-1 shadow-lg">
+          {TYPES.map((t) => {
+            const active = typeFilter === t
+            return (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`relative px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all cursor-pointer ${
+                  active ? 'text-black' : 'text-[var(--text-muted)] hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="active-type"
+                    className="absolute inset-0 bg-[var(--accent)] rounded-xl"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <span className="relative z-10">{t === 'all' ? 'All' : t.replace('_', ' ')}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Count */}
-      <p className="text-xs text-[var(--text-muted)] mb-3">
-        {filtered.length} memor{filtered.length === 1 ? 'y' : 'ies'}
-        {typeFilter !== 'all' && ` (${typeFilter})`}
-      </p>
-
-      {/* Table */}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
-        <MemoryTable memories={filtered} onDelete={handleDelete} />
-      </div>
+      {loading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-[400px] w-full reflective rounded-3xl" />
+        </div>
+      ) : (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl reflective overflow-hidden shadow-2xl"
+        >
+          <div className="p-6 border-b border-[var(--border)] bg-white/[0.01] flex items-center justify-between">
+            <span className="text-xs font-bold text-white uppercase tracking-widest">Memory Matrix</span>
+            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight">{filtered.length} entries registered</span>
+          </div>
+          <MemoryTable memories={filtered} onDelete={handleDelete} />
+        </motion.div>
+      )}
     </div>
   )
 }

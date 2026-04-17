@@ -26,42 +26,42 @@ export default function MemoryTable({ memories, onDelete }: Props) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-[var(--border)] text-left text-[var(--text-muted)]">
-            <th className="py-3 px-4 font-medium">Content</th>
-            <th className="py-3 px-4 font-medium w-28">Type</th>
-            <th className="py-3 px-4 font-medium w-24 text-right">Importance</th>
-            <th className="py-3 px-4 font-medium w-28">Created</th>
-            <th className="py-3 px-4 font-medium w-16"></th>
+          <tr className="border-b border-[var(--border)] text-left text-[var(--text-muted)] bg-white/[0.01]">
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px]">Transmission</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-28">Protocol</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-24 text-right">Weight</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-28 text-right">Registry</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-16"></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-white/[0.02]">
           {memories.map((m) => (
             <tr
               key={m.id}
-              className="border-b border-[var(--border)]/50 hover:bg-white/[0.02] transition-colors"
+              className="hover:bg-white/[0.03] transition-all group"
             >
-              <td className="py-3 px-4 max-w-md">
-                <p className="truncate">{m.content}</p>
+              <td className="py-4 px-6 max-w-md">
+                <p className="text-white/80 group-hover:text-white transition-colors line-clamp-2">{m.content}</p>
               </td>
-              <td className="py-3 px-4">
+              <td className="py-4 px-6">
                 <span
-                  className={`px-2 py-1 rounded text-xs font-medium border ${
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
                     TYPE_COLORS[m.type] || TYPE_COLORS.remember
                   }`}
                 >
-                  {m.type}
+                  {m.type.replace('_', ' ')}
                 </span>
               </td>
-              <td className="py-3 px-4 text-right font-mono text-xs">
-                {m.importance.toFixed(2)}
+              <td className="py-4 px-6 text-right font-mono text-[11px] text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors">
+                {m.importance.toFixed(3)}
               </td>
-              <td className="py-3 px-4 text-xs text-[var(--text-muted)]">
-                {m.created_at?.slice(0, 10)}
+              <td className="py-4 px-6 text-right text-[11px] text-[var(--text-muted)]">
+                {new Date(m.created_at || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' })}
               </td>
-              <td className="py-3 px-4">
+              <td className="py-4 px-6 text-right">
                 <button
                   onClick={() => onDelete(m.id)}
-                  className="p-1.5 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 transition-colors cursor-pointer"
+                  className="p-2 rounded-xl hover:bg-red-500/20 text-white/20 hover:text-red-400 transition-all cursor-pointer"
                 >
                   <Trash2 size={14} />
                 </button>

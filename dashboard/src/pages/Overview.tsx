@@ -5,6 +5,8 @@ import StatsCard from '../components/StatsCard'
 import { api } from '../api'
 import type { Stats } from '../types'
 
+import Skeleton from '../components/Skeleton'
+
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -45,12 +47,17 @@ export default function Overview() {
 
   if (!stats) {
     return (
-      <div className="p-10 space-y-8">
-        <div className="h-12 w-48 bg-white/5 rounded-lg animate-pulse" />
+      <div className="p-10 space-y-10">
+        <Skeleton className="h-10 w-64" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-32 rounded-2xl bg-white/5 animate-pulse" />
-          ))}
+          <Skeleton className="h-32 reflective rounded-2xl" />
+          <Skeleton className="h-32 reflective rounded-2xl" />
+          <Skeleton className="h-32 reflective rounded-2xl" />
+          <Skeleton className="h-32 reflective rounded-2xl" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <Skeleton className="lg:col-span-2 h-64 reflective rounded-2xl" />
+          <Skeleton className="h-64 reflective rounded-2xl" />
         </div>
       </div>
     )
