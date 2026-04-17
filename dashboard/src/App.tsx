@@ -8,6 +8,8 @@ import Memory from './pages/Memory'
 import Sessions from './pages/Sessions'
 import Traces from './pages/Traces'
 import Settings from './pages/Settings'
+import Tasks from './pages/Tasks'
+import SoulEditor from './pages/SoulEditor'
 import type { Page } from './types'
 
 function App() {
@@ -89,6 +91,8 @@ function App() {
             {page === 'sessions' && <Sessions />}
             {page === 'traces' && <Traces />}
             {page === 'settings' && <Settings />}
+            {page === 'tasks' && <Tasks />}
+            {page === 'soul' && <SoulEditor />}
           </motion.div>
         </AnimatePresence>
       </main>

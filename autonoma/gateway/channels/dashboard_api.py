@@ -313,6 +313,50 @@ def register_dashboard_routes(
         except Exception as e:
             return 500, headers, json.dumps({"error": str(e)})
 
+    # --- SOUL.md endpoints ---
+
+    async def handle_soul_get(request: dict) -> tuple[int, dict[str, str], str]:
+        """GET /api/soul — return the SOUL.md content."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.config import load_config as _load_config
+            cfg = _load_config()
+            soul_path = Path(cfg.workspace_dir) / "SOUL.md"
+            if not soul_path.exists():
+                return 200, headers, json.dumps({"content": "", "exists": False})
+            content = soul_path.read_text(encoding="utf-8")
+            stat = soul_path.stat()
+            return 200, headers, json.dumps({
+                "content": content,
+                "exists": True,
+                "size_bytes": stat.st_size,
+                "modified": stat.st_mtime,
+            })
+        except Exception as e:
+            logger.error("Dashboard GET /api/soul error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_soul_update(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/soul — update the SOUL.md content."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.config import load_config as _load_config
+            cfg = _load_config()
+            data = request.get("json", {})
+            content = data.get("content")
+            if content is None:
+                return 400, headers, json.dumps({"error": "Missing 'content' field"})
+            soul_path = Path(cfg.workspace_dir) / "SOUL.md"
+            soul_path.parent.mkdir(parents=True, exist_ok=True)
+            soul_path.write_text(content, encoding="utf-8")
+            return 200, headers, json.dumps({
+                "status": "ok",
+                "size_bytes": len(content.encode("utf-8")),
+            })
+        except Exception as e:
+            logger.error("Dashboard POST /api/soul error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
     # --- Config endpoints ---
 
     async def handle_config_get(request: dict) -> tuple[int, dict[str, str], str]:
@@ -423,6 +467,8 @@ def register_dashboard_routes(
             return 500, headers, json.dumps({"error": str(e)})
 
     # Register routes
+    http_server.add_route("GET", "/api/soul", handle_soul_get)
+    http_server.add_route("POST", "/api/soul", handle_soul_update)
     http_server.add_route("GET", "/api/config", handle_config_get)
     http_server.add_route("POST", "/api/config", handle_config_update)
     http_server.add_route("GET", "/api/skills/manifest", handle_manifest)
@@ -440,7 +486,7 @@ def register_dashboard_routes(
     http_server.add_route("GET", "/api/tasks/stats", handle_task_stats)
     http_server.add_route("DELETE", "/api/tasks", handle_task_cancel)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 16)
+    logger.info("Dashboard API routes registered (%d endpoints)", 18)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

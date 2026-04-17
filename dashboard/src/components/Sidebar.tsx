@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles } from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { Page } from '../types'
 
@@ -8,6 +8,7 @@ const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] =
   { page: 'memory', label: 'Memory', icon: Brain },
   { page: 'sessions', label: 'Sessions', icon: History },
   { page: 'traces', label: 'Traces', icon: Activity },
+  { page: 'tasks', label: 'Tasks', icon: ListTodo },
 ]
 
 import ThemeToggle from './ThemeToggle'
@@ -57,28 +58,52 @@ export default function Sidebar({ current, onChange }: Props) {
         {/* Divider */}
         <div className="!my-4 mx-2 border-t border-[var(--border)]" />
 
-        {/* Settings (separate from data pages) */}
-        {(() => {
-          const active = current === 'settings'
-          return (
-            <button
-              onClick={() => onChange('settings')}
-              className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
-              }`}
-            >
-              {active && (
-                <motion.div
-                  layoutId="active-nav"
-                  className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                />
-              )}
-              <Settings size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-              <span className="relative z-10">Settings</span>
-            </button>
-          )
-        })()}
+        {/* System (separate from data pages) */}
+        <div className="space-y-1.5">
+          {(() => {
+            const active = current === 'soul'
+            return (
+              <button
+                onClick={() => onChange('soul')}
+                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
+                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="active-nav"
+                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <Sparkles size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+                <span className="relative z-10">SOUL Editor</span>
+              </button>
+            )
+          })()}
+          
+          {(() => {
+            const active = current === 'settings'
+            return (
+              <button
+                onClick={() => onChange('settings')}
+                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
+                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="active-nav"
+                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <Settings size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+                <span className="relative z-10">Settings</span>
+              </button>
+            )
+          })()}
+        </div>
       </nav>
 
       {/* Footer */}

@@ -63,4 +63,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
+
+  getSoul: () =>
+    request<{ content: string; exists: boolean; size_bytes?: number; modified?: number }>('/soul'),
+
+  updateSoul: (content: string) =>
+    request<{ status: string; size_bytes: number }>('/soul', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    }),
 }

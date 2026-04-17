@@ -126,4 +126,4 @@ export interface AppConfig {
   log_level: string
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'settings'
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings'
