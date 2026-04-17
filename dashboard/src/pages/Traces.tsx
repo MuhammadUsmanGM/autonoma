@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle, ChevronRight, RefreshCw, Clock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../api'
@@ -30,20 +30,6 @@ function TraceRow({ trace }: { trace: TraceItem }) {
   const [expanded, setExpanded] = useState(false)
   const Icon = STATUS_ICONS[trace.status] || Activity
 
-  // Timeline calculations
-  const totalDuration = trace.elapsed_seconds || 0.001
-  const timelineSpans = useMemo(() => {
-    let lastTime = 0
-    return trace.spans.map((span, i) => {
-      const startPct = (lastTime / totalDuration) * 100
-      // We don't have per-span duration in the type yet, so we'll assume linear for visual's sake
-      // OR if we have multiple spans, we can guestimate or just show the sequence.
-      // But wait—the user wants to see "where the time goes".
-      // I'll check TraceItem type again.
-      return { ...span, startPct }
-    })
-  }, [trace.spans, totalDuration])
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -58,7 +44,7 @@ function TraceRow({ trace }: { trace: TraceItem }) {
           <ChevronRight size={14} className="text-[var(--text-muted)]" />
         </motion.div>
         <Icon size={16} className={STATUS_COLORS[trace.status]} />
-        <span className="text-[10px] font-mono text-white/30 tracking-wider">{trace.id.slice(0, 8)}</span>
+        <span className="text-[10px] font-mono text-[var(--text-faint)] tracking-wider">{trace.id.slice(0, 8)}</span>
         <span className="text-[10px] px-2 py-0.5 rounded-lg bg-[var(--accent-dim)] text-[var(--accent)] font-bold uppercase tracking-widest">
           {trace.channel}
         </span>
@@ -66,7 +52,7 @@ function TraceRow({ trace }: { trace: TraceItem }) {
           {trace.session_id.slice(0, 24)}
         </span>
         <div className="hidden md:flex items-center gap-2 px-3">
-           <div className="w-24 h-1 rounded-full bg-white/5 overflow-hidden">
+           <div className="w-24 h-1 rounded-full bg-[var(--bg-faint)] overflow-hidden">
                <motion.div 
                  initial={{ width: 0 }}
                  animate={{ width: '100%' }}
@@ -96,8 +82,8 @@ function TraceRow({ trace }: { trace: TraceItem }) {
             <div className="px-5 pb-6 border-t border-[var(--border)]">
               {/* Timeline Header */}
               <div className="flex items-center justify-between mt-6 mb-4">
-                  <h4 className="text-[10px] font-bold text-white uppercase tracking-widest">Processing Timeline</h4>
-                  <div className="flex items-center gap-4 text-[9px] text-white/30 font-bold uppercase tracking-tighter">
+                  <h4 className="text-[10px] font-bold text-[var(--text)] uppercase tracking-widest">Processing Timeline</h4>
+                  <div className="flex items-center gap-4 text-[9px] text-[var(--text-faint)] font-bold uppercase tracking-tighter">
                       <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-[var(--accent)]" /> Active Stage</div>
                       <span>Total: {trace.elapsed_seconds.toFixed(3)}s</span>
                   </div>
@@ -112,11 +98,11 @@ function TraceRow({ trace }: { trace: TraceItem }) {
 
                    return (
                     <div key={i} className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[10px] font-mono text-white/40">
-                            <span className="truncate max-w-[200px] text-white/60 font-bold">{span.stage}</span>
+                        <div className="flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)]">
+                            <span className="truncate max-w-[200px] text-[var(--text)] font-bold">{span.stage}</span>
                             <span>{JSON.stringify(span.data).slice(0, 40)}...</span>
                         </div>
-                        <div className="h-2 rounded-full bg-white/[0.03] relative overflow-hidden group/span">
+                        <div className="h-2 rounded-full bg-[var(--bg-faint)] relative overflow-hidden group/span">
                             <motion.div 
                               initial={{ left: '-10%', width: 0 }}
                                animate={{ left: `${spanStart}%`, width: `${spanWidth}%` }}

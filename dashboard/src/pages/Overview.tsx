@@ -75,7 +75,7 @@ export default function Overview() {
     <div className="p-10 space-y-10">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Systems Overview</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">Systems Overview</h2>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-xs text-[var(--success)] font-bold uppercase tracking-widest bg-[var(--success)]/10 px-2 py-0.5 rounded">
               <Activity size={12} />
@@ -101,7 +101,7 @@ export default function Overview() {
           className="xl:col-span-2 rounded-2xl reflective p-8 flex flex-col"
         >
           <div className="flex items-center justify-between mb-8">
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+            <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest flex items-center gap-2">
               <Activity size={16} className="text-[var(--accent)]" />
               Recent Pulses
             </h3>
@@ -112,17 +112,17 @@ export default function Overview() {
             {recentTraces.map((trace) => (
               <div 
                 key={trace.id}
-                className="group flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:border-[var(--accent)]/30 hover:bg-[var(--accent-dim)] transition-all cursor-pointer"
+                className="group flex items-center gap-4 p-4 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent-dim)] transition-all cursor-pointer"
               >
                 <div className={`w-2 h-2 rounded-full shrink-0 ${trace.status === 'completed' ? 'bg-[var(--success)] shadow-lg shadow-[var(--success)]/20' : trace.status === 'error' ? 'bg-[var(--error)] shadow-lg shadow-[var(--error)]/20' : 'bg-blue-400 shadow-lg shadow-blue-400/20'}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-sm font-semibold text-white truncate capitalize">{trace.channel} Interaction</span>
+                    <span className="text-sm font-semibold text-[var(--text)] truncate capitalize">{trace.channel} Interaction</span>
                     <span className="text-[10px] text-[var(--text-muted)] font-mono">{new Date(trace.started_at).toLocaleTimeString()}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-[10px] text-[var(--accent)] font-bold uppercase tracking-wider">ID: {trace.id}</span>
-                    <span className="text-[10px] text-white/20">|</span>
+                    <span className="text-[10px] text-[var(--text-faint)]">|</span>
                     <span className="text-[10px] text-[var(--text-muted)] truncate">Session: {trace.session_id}</span>
                   </div>
                 </div>
@@ -147,7 +147,7 @@ export default function Overview() {
             animate={{ opacity: 1, scale: 1 }}
             className="flex-1 rounded-2xl reflective p-8"
           >
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest mb-6 flex items-center gap-2">
               <Radio size={16} className="text-[var(--accent)]" />
               Pathways
             </h3>
@@ -155,9 +155,9 @@ export default function Overview() {
               {stats.active_channels.map((ch) => (
                 <div
                   key={ch}
-                  className="px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-between"
+                  className="px-4 py-3 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] flex items-center justify-between"
                 >
-                  <span className="text-[11px] font-bold text-white uppercase tracking-wider">{ch}</span>
+                  <span className="text-[11px] font-bold text-[var(--text)] uppercase tracking-wider">{ch}</span>
                   <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] glow-sm" />
                 </div>
               ))}
@@ -174,7 +174,7 @@ export default function Overview() {
             transition={{ delay: 0.1 }}
             className="rounded-2xl reflective p-8 flex flex-col"
           >
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest mb-6 flex items-center gap-2">
               <Brain size={16} className="text-[var(--accent)]" />
               Cognitive
             </h3>

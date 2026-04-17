@@ -35,9 +35,9 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
         
         <button 
           onClick={onToggleAlerts}
-          className="relative p-2 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] transition-all cursor-pointer group"
+          className="relative p-2 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] hover:bg-[var(--overlay)] transition-all cursor-pointer group"
         >
-          <Bell size={18} className="text-[var(--text-muted)] group-hover:text-white transition-colors" />
+          <Bell size={18} className="text-[var(--text-muted)] group-hover:text-[var(--text)] transition-colors" />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 flex h-4 w-4">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
@@ -131,12 +131,12 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
           <ThemeToggle />
         </div>
         
-        <div className="px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-between">
+        <div className="px-4 py-3 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)]" />
             <span className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Live</span>
           </div>
-          <span className="text-[10px] text-white/40 font-mono">v0.1.0</span>
+          <span className="text-[10px] text-[var(--text-faint)] font-mono">v0.1.0</span>
         </div>
       </div>
     </aside>

@@ -55,12 +55,12 @@ export default function Sessions() {
     <div className="p-10 space-y-8 h-screen flex flex-col">
       <header className="flex items-center justify-between shrink-0">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Registry Logs</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">Registry Logs</h2>
           <p className="text-sm text-[var(--text-muted)]">Replay and audit historical human-agent interactions</p>
         </div>
         <button
           onClick={load}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text)] hover:bg-[var(--overlay)] transition-colors cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           Sync Sessions
@@ -105,13 +105,13 @@ export default function Sessions() {
 
              {/* Session list */}
              <div className="flex-1 rounded-2xl reflective p-4 overflow-y-auto scrollbar-hide min-h-0">
-                <h3 className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] mb-4 px-2">Handshake Registry</h3>
+                <h3 className="text-[10px] font-bold text-[var(--text-faint)] uppercase tracking-[0.2em] mb-4 px-2">Handshake Registry</h3>
                 {filteredSessions.length > 0 ? (
                   <SessionList sessions={filteredSessions} selected={selected} onSelect={selectSession} />
                 ) : (
                   <div className="py-20 text-center">
-                      <Filter size={24} className="mx-auto mb-3 text-white/5" />
-                      <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">No matching resonance</p>
+                      <Filter size={24} className="mx-auto mb-3 text-[var(--text-faint)]" />
+                      <p className="text-[10px] font-bold text-[var(--text-faint)] uppercase tracking-widest">No matching resonance</p>
                   </div>
                 )}
              </div>

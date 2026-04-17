@@ -119,7 +119,7 @@ export default function MemoryPage() {
     <div className="p-10 space-y-8 pb-32">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Cognitive Explorer</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">Cognitive Explorer</h2>
           <p className="text-sm text-[var(--text-muted)]">Browse and manage the agent's neural resonance</p>
         </div>
         <div className="flex items-center gap-3">
@@ -134,7 +134,7 @@ export default function MemoryPage() {
           )}
           <button
             onClick={load}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text)] hover:bg-[var(--overlay)] transition-colors cursor-pointer"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Sync Registry
@@ -151,11 +151,11 @@ export default function MemoryPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search within neural paths..."
-            className="w-full bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl pl-12 pr-4 py-3 text-sm text-[var(--text)] placeholder:text-white/20 outline-none focus:border-[var(--accent)]/40 focus:ring-1 focus:ring-[var(--accent)]/20 transition-all shadow-xl"
+            className="w-full bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl pl-12 pr-4 py-3 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] outline-none focus:border-[var(--accent)]/40 focus:ring-1 focus:ring-[var(--accent)]/20 transition-all shadow-xl"
           />
         </div>
         
-        <div className="p-1 bg-white/[0.03] border border-[var(--border)] rounded-2xl flex gap-1 shadow-lg overflow-x-auto scrollbar-hide">
+        <div className="p-1 bg-[var(--bg-faint)] border border-[var(--border-faint)] rounded-2xl flex gap-1 shadow-lg overflow-x-auto scrollbar-hide">
           {TYPES.map((t) => {
             const active = typeFilter === t
             const count = t === 'maintenance' ? stale.length : undefined
@@ -218,8 +218,8 @@ export default function MemoryPage() {
                   </div>
                   <span className="text-[10px] text-[var(--text-muted)]">ID: #{m.id}</span>
                 </div>
-                <p className="text-sm text-white/90 leading-relaxed italic">"{m.content}"</p>
-                <div className="mt-auto flex items-center justify-end gap-3 pt-4 border-t border-white/5" onClick={e => e.stopPropagation()}>
+                <p className="text-sm text-[var(--text)] opacity-90 leading-relaxed italic">"{m.content}"</p>
+                <div className="mt-auto flex items-center justify-end gap-3 pt-4 border-t border-[var(--border-faint)]" onClick={e => e.stopPropagation()}>
                   <button 
                     onClick={() => handleReview(m.id, 'dismiss')}
                     className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
@@ -249,8 +249,8 @@ export default function MemoryPage() {
           animate={{ opacity: 1, y: 0 }}
           className="rounded-3xl reflective overflow-hidden shadow-2xl"
         >
-          <div className="p-6 border-b border-[var(--border)] bg-white/[0.01] flex items-center justify-between">
-            <span className="text-xs font-bold text-white uppercase tracking-widest">Memory Matrix</span>
+          <div className="p-6 border-b border-[var(--border)] bg-[var(--bg-faint)] flex items-center justify-between">
+            <span className="text-xs font-bold text-[var(--text)] uppercase tracking-widest">Memory Matrix</span>
             <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight">{filtered.length} nodes active</span>
           </div>
           <MemoryTable 
@@ -272,12 +272,12 @@ export default function MemoryPage() {
             exit={{ y: 100, opacity: 0 }}
             className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 px-8 py-4 glass rounded-3xl border border-[var(--accent)]/50 shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-8"
           >
-            <div className="flex items-center gap-4 border-r border-white/10 pr-8">
+            <div className="flex items-center gap-4 border-r border-[var(--border-faint)] pr-8">
               <div className="w-10 h-10 rounded-2xl bg-[var(--accent)] text-black flex items-center justify-center font-bold text-lg">
                 {selectedIds.length}
               </div>
               <div>
-                <h4 className="text-sm font-bold text-white">Nodes targeted</h4>
+                <h4 className="text-sm font-bold text-[var(--text)]">Nodes targeted</h4>
                 <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Batch execution ready</p>
               </div>
             </div>

@@ -33,7 +33,7 @@ export default function AlertsPanel({ isOpen, onClose }: { isOpen: boolean, onCl
               </div>
               <button 
                 onClick={onClose}
-                className="p-2 rounded-xl hover:bg-white/5 text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+                className="p-2 rounded-xl hover:bg-[var(--overlay)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -54,7 +54,7 @@ export default function AlertsPanel({ isOpen, onClose }: { isOpen: boolean, onCl
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     className={`p-4 rounded-2xl border transition-all ${
-                      n.read ? 'bg-white/[0.01] border-white/5 opacity-60' : 'bg-white/[0.03] border-[var(--border)] shadow-lg'
+                      n.read ? 'bg-[var(--bg-faint)] border-[var(--border-faint)] opacity-60' : 'bg-[var(--bg-card)] border-[var(--border)] shadow-lg'
                     }`}
                   >
                     <div className="flex gap-4">
@@ -94,7 +94,7 @@ export default function AlertsPanel({ isOpen, onClose }: { isOpen: boolean, onCl
               <div className="p-4 border-t border-[var(--border)] flex gap-3">
                 <button 
                   onClick={markAllAsRead}
-                  className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-white/10 transition-colors"
+                  className="flex-1 py-3 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[10px] font-bold uppercase tracking-widest text-[var(--text)] hover:bg-[var(--overlay)] transition-colors"
                 >
                   Clear Unread
                 </button>
