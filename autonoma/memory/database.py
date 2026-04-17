@@ -495,10 +495,10 @@ class MemoryDatabase:
             stored = _blob_to_floats(row_dict["embedding"], row_dict["dimensions"])
             score = _cosine_similarity(query_embedding, stored)
             row_dict["cosine_score"] = score
-            # Clean up embedding fields from result
-            del row_dict["embedding"]
-            del row_dict["dimensions"]
-            del row_dict["provider"]
+            # Clean up embedding fields from result (pop is safe if missing)
+            row_dict.pop("embedding", None)
+            row_dict.pop("dimensions", None)
+            row_dict.pop("provider", None)
             scored.append(row_dict)
 
         scored.sort(key=lambda x: x["cosine_score"], reverse=True)
