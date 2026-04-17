@@ -1,5 +1,6 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { useNotifications } from '../contexts/NotificationsContext'
 import type { Page } from '../types'
 
 const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] = [
@@ -16,18 +17,36 @@ import ThemeToggle from './ThemeToggle'
 interface Props {
   current: Page
   onChange: (page: Page) => void
+  onToggleAlerts: () => void
 }
 
-export default function Sidebar({ current, onChange }: Props) {
+export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
+  const { unreadCount } = useNotifications()
+
   return (
     <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0 z-20 font-sans">
-      {/* Brand */}
-      <div className="px-6 py-9">
+      {/* Brand & Alerts */}
+      <div className="px-6 py-9 flex items-center justify-between">
         <img 
           src="/logo.webp" 
           alt="Autonoma" 
           className="h-10 w-auto object-contain brightness-110 drop-shadow-[0_0_15px_rgba(245,158,11,0.2)]" 
         />
+        
+        <button 
+          onClick={onToggleAlerts}
+          className="relative p-2 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] transition-all cursor-pointer group"
+        >
+          <Bell size={18} className="text-[var(--text-muted)] group-hover:text-white transition-colors" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-4 w-4 bg-[var(--accent)] text-[9px] font-bold text-black items-center justify-center">
+                {unreadCount}
+              </span>
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Navigation */}
