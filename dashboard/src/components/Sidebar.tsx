@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity, Zap } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity } from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { Page } from '../types'
 
@@ -9,6 +9,8 @@ const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] =
   { page: 'sessions', label: 'Sessions', icon: History },
   { page: 'traces', label: 'Traces', icon: Activity },
 ]
+
+import ThemeToggle from './ThemeToggle'
 
 interface Props {
   current: Page
@@ -25,10 +27,6 @@ export default function Sidebar({ current, onChange }: Props) {
           alt="Autonoma" 
           className="h-10 w-auto object-contain brightness-110 drop-shadow-[0_0_15px_rgba(245,158,11,0.2)]" 
         />
-        <div className="flex items-center gap-1.5 mt-2 ml-1">
-          <Zap size={10} className="text-[var(--accent)]" />
-          <span className="text-[10px] text-[var(--accent)] font-bold uppercase tracking-[0.15em]">Premium FTE</span>
-        </div>
       </div>
 
       {/* Navigation */}
@@ -57,8 +55,12 @@ export default function Sidebar({ current, onChange }: Props) {
         })}
       </nav>
 
-      {/* System Status */}
-      <div className="p-4">
+      {/* Footer */}
+      <div className="p-4 space-y-4">
+        <div className="flex justify-center">
+          <ThemeToggle />
+        </div>
+        
         <div className="px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)]" />

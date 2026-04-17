@@ -14,14 +14,29 @@
   --text-muted: #8e8e93;
   --success: #10b981;
   --error: #ef4444;
-  
-  /* Premium Shadow */
   --shadow-premium: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme='light'] {
+  --bg: #fafafa;
+  --bg-sidebar: #f4f4f5;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f9fafb;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-bright: rgba(0, 0, 0, 0.12);
+  --accent: #d97706;
+  --accent-glow: rgba(217, 119, 6, 0.2);
+  --accent-dim: rgba(217, 119, 6, 0.1);
+  --text: #09090b;
+  --text-muted: #71717a;
+  --success: #059669;
+  --error: #dc2626;
+  --shadow-premium: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 body {
   margin: 0;
-  background: radial-gradient(circle at 50% 50%, #0a0a0c 0%, #030303 100%);
+  background: radial-gradient(circle at 50% 50%, var(--bg-card) 0%, var(--bg) 100%);
   color: var(--text);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   letter-spacing: -0.01em;
