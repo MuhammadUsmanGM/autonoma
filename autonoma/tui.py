@@ -85,6 +85,16 @@ def read_key(timeout: float | None = None) -> str:
     """Read a keypress. Returns key code or raw char. timeout=None blocks."""
     if os.name == "nt":
         import msvcrt
+
+        def _peek(ms: int = 50) -> bool:
+            """Wait up to `ms` for more input. Returns True if available."""
+            end = time.time() + ms / 1000.0
+            while not msvcrt.kbhit():
+                if time.time() >= end:
+                    return False
+                time.sleep(0.002)
+            return True
+
         if timeout is not None:
             deadline = time.time() + timeout
             while not msvcrt.kbhit():
@@ -92,16 +102,46 @@ def read_key(timeout: float | None = None) -> str:
                     return ""
                 time.sleep(0.02)
         ch = msvcrt.getch()
-        if ch == b"\x03": return KEY_CTRL_C
-        if ch == b"\x1b": return KEY_ESC
-        if ch in (b"\r", b"\n"): return KEY_ENTER
+        if ch == b"\x03":
+            return KEY_CTRL_C
+        if ch in (b"\r", b"\n"):
+            return KEY_ENTER
+        # Old-style extended key: scan-code pair (legacy conhost / no VT)
         if ch in (b"\x00", b"\xe0"):
             ch2 = msvcrt.getch()
             return {
                 b"H": KEY_UP, b"P": KEY_DOWN,
+                b"K": KEY_LEFT, b"M": KEY_RIGHT,
                 b"I": KEY_PGUP, b"Q": KEY_PGDN,
                 b"G": KEY_HOME, b"O": KEY_END,
             }.get(ch2, "")
+        # VT escape sequence (Windows Terminal / VT input mode)
+        if ch == b"\x1b":
+            if not _peek(50):
+                return KEY_ESC  # standalone ESC
+            ch2 = msvcrt.getch()
+            if ch2 != b"[":
+                return KEY_ESC
+            if not _peek(50):
+                return KEY_ESC
+            ch3 = msvcrt.getch()
+            arrows = {
+                b"A": KEY_UP, b"B": KEY_DOWN,
+                b"C": KEY_RIGHT, b"D": KEY_LEFT,
+                b"H": KEY_HOME, b"F": KEY_END,
+            }
+            if ch3 in arrows:
+                return arrows[ch3]
+            # PgUp/PgDn: ESC [ 5 ~ / ESC [ 6 ~
+            if ch3 == b"5":
+                if _peek(50):
+                    msvcrt.getch()
+                return KEY_PGUP
+            if ch3 == b"6":
+                if _peek(50):
+                    msvcrt.getch()
+                return KEY_PGDN
+            return KEY_ESC
         try:
             return ch.decode("utf-8", errors="ignore").lower()
         except Exception:
