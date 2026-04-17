@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity, Bot, Zap } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Zap } from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { Page } from '../types'
 
@@ -17,20 +17,17 @@ interface Props {
 
 export default function Sidebar({ current, onChange }: Props) {
   return (
-    <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0 z-20">
+    <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0 z-20 font-sans">
       {/* Brand */}
-      <div className="px-6 py-8 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-[var(--accent)] flex items-center justify-center glow-sm">
-          <Bot size={20} className="text-black" />
-        </div>
-        <div>
-          <h1 className="text-sm font-bold tracking-tight uppercase text-white">
-            Autonoma
-          </h1>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <Zap size={10} className="text-[var(--accent)]" />
-            <span className="text-[10px] text-[var(--accent)] font-medium uppercase tracking-wider">Premium FTE</span>
-          </div>
+      <div className="px-6 py-9">
+        <img 
+          src="/logo.webp" 
+          alt="Autonoma" 
+          className="h-10 w-auto object-contain brightness-110 drop-shadow-[0_0_15px_rgba(245,158,11,0.2)]" 
+        />
+        <div className="flex items-center gap-1.5 mt-2 ml-1">
+          <Zap size={10} className="text-[var(--accent)]" />
+          <span className="text-[10px] text-[var(--accent)] font-bold uppercase tracking-[0.15em]">Premium FTE</span>
         </div>
       </div>
 
