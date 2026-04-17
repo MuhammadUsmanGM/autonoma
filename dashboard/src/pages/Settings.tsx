@@ -107,14 +107,31 @@ export default function Settings() {
         payload.llm = llm
       }
       await api.updateConfig(payload)
-      toast.success('Configuration saved. Restart agent to apply changes.', {
-        duration: 5000,
+      toast.success('Configuration saved. Restart required to apply.', {
+        action: {
+          label: 'Restart Now',
+          onClick: handleRestart
+        },
+        duration: 8000,
       })
       await loadConfig()
     } catch (e: any) {
       toast.error(`Failed to save: ${e.message}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleRestart = async () => {
+    const ok = confirm('Trigger remote agent restart? Existing sessions may be interrupted.')
+    if (!ok) return
+    
+    try {
+      await api.restartAgent()
+      toast.success('Restart command transmitted. Reconnecting in 5s...')
+      setTimeout(() => window.location.reload(), 5000)
+    } catch (e: any) {
+      toast.error(`Restart failed: ${e.message}`)
     }
   }
 
@@ -154,15 +171,15 @@ export default function Settings() {
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">System Configuration</h2>
-          <p className="text-sm text-[var(--text-muted)]">Modify agent parameters. Changes require a restart to take effect.</p>
+          <p className="text-sm text-[var(--text-muted)]">Modify agent parameters and communication pathways.</p>
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={loadConfig}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-[var(--text)] hover:bg-white/10 transition-colors cursor-pointer"
+            onClick={handleRestart}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/[0.05] hover:border-[var(--error)]/20 transition-all cursor-pointer"
           >
             <RefreshCw size={14} />
-            Reload
+            Restart Agent
           </button>
           <button
             onClick={handleSave}

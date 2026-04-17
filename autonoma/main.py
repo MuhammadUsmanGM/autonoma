@@ -155,6 +155,7 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
         task_queue=task_queue,
         trace_store=trace_store,
         skill_registry=skill_registry,
+        agent_runner=runner,
     )
 
     # 17. Start everything

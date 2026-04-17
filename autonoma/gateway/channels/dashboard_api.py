@@ -28,6 +28,7 @@ def register_dashboard_routes(
     task_queue=None,
     trace_store=None,
     skill_registry=None,
+    agent_runner=None,
 ) -> None:
     """Register all dashboard API routes on the HTTP server."""
 
@@ -301,6 +302,26 @@ def register_dashboard_routes(
             logger.error("Dashboard /api/memories/review error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    # --- System Control ---
+
+    async def handle_system_restart(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/system/restart — trigger agent reload."""
+        headers = {"Content-Type": "application/json"}
+        if not agent_runner:
+            return 404, headers, json.dumps({"error": "Agent runner not available"})
+        try:
+            # We must not block the response, as restarting the runner might
+            # close the very server handling this request. We schedule it.
+            def _restart():
+                logger.info("Remote restart triggered from dashboard")
+                agent_runner.stop()
+                agent_runner.start()
+            
+            asyncio.get_event_loop().call_later(0.5, _restart)
+            return 200, headers, json.dumps({"status": "restarting"})
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
     # --- Skill manifest endpoint ---
 
     async def handle_manifest(request: dict) -> tuple[int, dict[str, str], str]:
@@ -485,6 +506,7 @@ def register_dashboard_routes(
     http_server.add_route("GET", "/api/tasks", handle_tasks)
     http_server.add_route("GET", "/api/tasks/stats", handle_task_stats)
     http_server.add_route("DELETE", "/api/tasks", handle_task_cancel)
+    http_server.add_route("POST", "/api/system/restart", handle_system_restart)
 
     logger.info("Dashboard API routes registered (%d endpoints)", 18)
 

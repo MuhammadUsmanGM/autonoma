@@ -22,6 +22,15 @@ export const api = {
   deleteMemory: (id: number) =>
     request<{ deleted: number }>(`/memories/${id}`, { method: 'DELETE' }),
 
+  getStaleMemories: () => request<Memory[]>('/memories/stale'),
+
+  reviewMemory: (id: number, action: 'review' | 'dismiss') =>
+    request<{ reviewed?: string; dismissed?: string }>('/memories/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memory_id: id, action }),
+    }),
+
   getSessions: () => request<Session[]>('/sessions'),
 
   getSessionDetail: (id: string) =>
@@ -73,4 +82,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
     }),
+
+  getSkills: () => request<Array<{ name: string; description: string; provider: string }>>('/skills/manifest'),
+
+  restartAgent: () => request<{ status: string }>('/system/restart', { method: 'POST' }),
 }
