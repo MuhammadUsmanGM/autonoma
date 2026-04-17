@@ -50,9 +50,9 @@ export default function ChatPanel() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)]">
+    <div className="flex flex-col h-full">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide min-w-0">
         <AnimatePresence initial={false}>
           {messages.length === 0 && (
             <motion.div 
@@ -87,13 +87,13 @@ export default function ChatPanel() {
                 {msg.role === 'user' ? <User size={14} className="text-white/60" /> : <Bot size={14} className="text-[var(--accent)]" />}
               </div>
               <div
-                className={`max-w-[80%] px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed relative ${
+                className={`max-w-[80%] min-w-0 px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed relative break-words ${
                   msg.role === 'user'
                     ? 'bg-white/[0.04] text-white border border-white/10 rounded-tr-none'
                     : 'bg-[var(--bg-card)] border border-[var(--border)] text-white/90 rounded-tl-none ring-1 ring-white/5'
                 }`}
               >
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                 <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)] mt-2 block opacity-40">
                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
