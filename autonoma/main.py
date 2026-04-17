@@ -104,7 +104,13 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
 
     # 12. Create HTTP server (always on — needed for dashboard API + channels)
     ch = config.channels
-    http_server = HTTPServer(host=config.gateway.host, port=config.gateway.http_port)
+    # Look for dashboard/dist relative to the project root
+    static_dir = Path(__file__).parent.parent / "dashboard" / "dist"
+    http_server = HTTPServer(
+        host=config.gateway.host, 
+        port=config.gateway.http_port,
+        static_dir=static_dir if static_dir.exists() else None
+    )
 
     # 13. Create gateway server
     auth = AuthMiddleware()
