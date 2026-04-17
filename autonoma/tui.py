@@ -6,6 +6,7 @@ import asyncio
 import getpass
 import os
 import re
+import socket
 import sys
 import time
 import webbrowser
@@ -264,6 +265,16 @@ class AutonomaTUI:
                 )
                 self._setup_wizard(forced=True)
 
+                # Bug fix #4: If setup wizard didn't result in a valid key,
+                # the user aborted (Ctrl+C during getpass or ESC). Don't
+                # start the agent — it will just error out immediately.
+                if self._is_first_run():
+                    self.console.print(
+                        "\n[yellow]Setup incomplete — no API key configured.[/]"
+                    )
+                    self.console.print("[dim]Run autonoma again to retry setup.[/]")
+                    return
+
             # Install logging (before agent starts)
             self.log_ring = install_logging(
                 log_file=str(self.log_file), level="INFO"
@@ -443,10 +454,26 @@ class AutonomaTUI:
 
     def _open_dashboard(self) -> None:
         cfg = self._safe_load_config()
+        host = cfg.gateway.host if cfg else "127.0.0.1"
         port = cfg.gateway.http_port if cfg else 8766
         url = f"http://localhost:{port}"
         self.console.clear()
-        self.console.print(f"\nOpening [cyan]{url}[/]…")
+
+        # Bug fix #6: Probe the port before launching the browser so the
+        # user gets a clear warning if the agent hasn't finished booting.
+        try:
+            sock = socket.create_connection((host, port), timeout=0.5)
+            sock.close()
+        except OSError:
+            self.console.print(
+                f"\n[yellow]⚠ Port {port} is not responding yet.[/]"
+            )
+            self.console.print(
+                "[dim]The agent may still be starting. "
+                "The browser will open anyway — refresh once it's ready.[/]\n"
+            )
+
+        self.console.print(f"Opening [cyan]{url}[/]…")
         try:
             webbrowser.open(url)
             self.console.print("[green]✓ Browser launched.[/]")
@@ -469,6 +496,28 @@ class AutonomaTUI:
             )
             self.runner.stop()
 
+        def _manage_header():
+            """Bug fix #2: Render a header that reflects the *actual* agent
+            state while inside the Manage menu, so the user sees
+            'STOPPED' instead of a stale 'RUNNING'."""
+            self._print_banner()
+            status = self.runner.status() if self.runner else "stopped"
+            status_colors = {
+                "running": "green", "starting": "yellow",
+                "stopping": "yellow", "stopped": "dim", "error": "red",
+            }
+            color = status_colors.get(status, "white")
+            self.console.print(
+                Align.center(
+                    Text.assemble(
+                        ("● ", color),
+                        (f"Agent {status.upper()}", f"bold {color}"),
+                        ("  —  Configuration Mode", "dim"),
+                    )
+                )
+            )
+            self.console.print()
+
         try:
             while True:
                 idx = self._arrow_select(
@@ -478,7 +527,7 @@ class AutonomaTUI:
                         "Channels (enable, disable, configure)",
                         "Back to control tower",
                     ],
-                    header_renderer=self._print_banner,
+                    header_renderer=_manage_header,
                     allow_back=True,
                 )
                 if idx is None or idx == 2:
@@ -713,9 +762,16 @@ class AutonomaTUI:
         return " ".join(parts)
 
     def _toggle_channel(self, name: str) -> None:
-        if self._channel_enabled(name):
+        was_on = self._channel_enabled(name)
+        if was_on:
             for var in CHANNEL_ENV[name]:
                 self._disable_env(var)
+            # Bug fix #1: Also persist the enabled flag into autonoma.yaml
+            # so the agent actually respects the toggle on restart.
+            save_yaml_config(
+                self.yaml_path, {"channels": {name: {"enabled": False}}}
+            )
+            self._invalidate_config_cache()
             self.console.print(f"\n[yellow]✓ {name} disabled.[/]")
         else:
             reenabled = False
@@ -723,6 +779,11 @@ class AutonomaTUI:
                 if self._enable_env(var):
                     reenabled = True
             if reenabled:
+                # Bug fix #1: Persist enabled: true to YAML.
+                save_yaml_config(
+                    self.yaml_path, {"channels": {name: {"enabled": True}}}
+                )
+                self._invalidate_config_cache()
                 self.console.print(f"\n[green]✓ {name} re-enabled.[/]")
             else:
                 self.console.print(
@@ -753,7 +814,13 @@ class AutonomaTUI:
                 return
             if value:
                 self._set_env(var, value)
-        self.console.print(f"\n[green]✓ {name} configured.[/]")
+        # Bug fix #1: After configuring credentials, also enable the
+        # channel in YAML so the agent picks it up on restart.
+        save_yaml_config(
+            self.yaml_path, {"channels": {name: {"enabled": True}}}
+        )
+        self._invalidate_config_cache()
+        self.console.print(f"\n[green]✓ {name} configured and enabled.[/]")
         self._pause(short=True)
 
     # ----- Primitives -----
@@ -980,12 +1047,14 @@ class AutonomaTUI:
         return changed
 
     def _pause(self, short: bool = False) -> None:
+        """Wait for a keypress. Bug fix #5: Ctrl+C during a pause returns
+        to the caller via BackSignal instead of killing the entire TUI."""
         self.console.print(
             "\n[dim]Press any key to continue…[/]" if not short else "[dim]…[/]"
         )
         try:
             key = read_key()
             if key == KEY_CTRL_C:
-                raise KeyboardInterrupt
+                raise BackSignal
         except KeyboardInterrupt:
-            raise
+            raise BackSignal
