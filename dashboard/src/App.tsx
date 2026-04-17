@@ -83,7 +83,7 @@ function App() {
             animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
             exit={{ opacity: 0, y: -10, filter: 'blur(8px)' }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="min-h-full"
+            className="h-full flex flex-col"
           >
             {page === 'overview' && <Overview />}
             {page === 'chat' && <Chat />}

@@ -68,15 +68,15 @@ export default function SoulEditor() {
 
   if (loading) {
     return (
-      <div className="p-10 space-y-8">
-        <Skeleton className="h-10 w-96" />
-        <Skeleton className="h-[calc(100vh-16rem)] reflective rounded-2xl" />
+      <div className="p-10 space-y-8 flex-1 flex flex-col">
+        <Skeleton className="h-10 w-96 shrink-0" />
+        <Skeleton className="flex-1 reflective rounded-2xl" />
       </div>
     )
   }
 
   return (
-    <div className="p-10 space-y-6 h-full flex flex-col">
+    <div className="p-10 space-y-6 flex-1 flex flex-col min-h-0">
       {/* Header */}
       <header className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
