@@ -16,27 +16,28 @@
 
 ---
 
-Autonoma is a modular AI agent that operates as a **digital full-time employee (FTE)**. It connects to your communication channels, remembers context across conversations, executes tasks with built-in tools, and exposes a real-time dashboard for monitoring — all from a single Python process.
+Autonoma is a modular AI agent that operates as a **digital full-time employee (FTE)**. It connects to your communication channels, remembers context across conversations, executes tasks with built-in tools, and exposes a high-fidelity HUD for real-time monitoring — all from a single Python process.
 
 ## Features
 
 ### Multi-Channel Communication
-Connect once, reach everywhere. Autonoma natively supports **Telegram**, **Discord**, **WhatsApp** (QR scan via whatsapp-web.js), **Gmail**, a **REST API**, and an interactive **CLI**. Channels auto-enable when you set their credentials in `.env`.
+Connect once, reach everywhere. Autonoma natively supports **Telegram**, **Discord**, **WhatsApp**, **Gmail**, and a **REST API**. Features intelligent routing and multi-session persistence.
+
+### Proactive Monitoring & Alerts
+The platform is no longer purely reactive. A background polling service continuously monitors system health, memory thresholds, and channel connectivity, triggering **HUD Alerts** through a slide-over triage panel.
+
+### High-Fidelity Dashboard
+A premium React + TypeScript HUD with context-aware **Dual-Theme support** (Light/Dark).
+- **Execution Telemetry**: Live Gantt-style visualizations tracking pipeline latency.
+- **Neural Registry**: Memory explorer with bulk-pruning and stale node maintenance.
+- **Soul Evolution**: Identity editor with integrated **diff view** to track personality shifts.
+- **Session Audit Log**: Advanced search and filtering to replay historical interactions.
 
 ### Intelligent Memory
-SQLite + FTS5 powered memory with **BM25 ranked retrieval**. Memories are scored by relevance, importance, and recency. Automatic deduplication, importance decay, and consolidation keep the context window clean. The LLM stores and forgets memories via inline tags (`[REMEMBER:]`, `[FACT:]`, `[PREFERENCE:]`, `[FORGET:]`).
+SQLite + FTS5 powered memory with **BM25 ranked retrieval**. Memories are scored by relevance, importance, and recency. Features automatic deduplication and importance decay.
 
-### Web Dashboard
-A React + Tailwind dashboard with an **amber glow dark theme**. Includes an overview with live stats, a chat interface to talk to the agent, a memory explorer with search/filter/delete, and a session browser to replay past conversations.
-
-### Tool Execution
-Sandboxed execution environment with built-in tools for file operations, shell commands, and web search. The agent autonomously decides when to use tools and chains them for multi-step workflows.
-
-### Flexible LLM Backend
-Swap between **Anthropic Claude** and **OpenRouter** (access to 100+ models) by changing a single environment variable. No code changes needed.
-
-### Personality System
-Agent behavior is defined in `SOUL.md` — a human-readable personality file that controls communication style, proactivity level, and domain expertise. Edit it to make the agent yours.
+### Tool execution & Sandbox
+Secure execution environment with built-in tools for web search, file operations, and shell command chaining in isolated workspaces.
 
 ## Architecture
 
