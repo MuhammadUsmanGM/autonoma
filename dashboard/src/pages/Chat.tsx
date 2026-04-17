@@ -1,4 +1,4 @@
-import { Activity, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import ChatPanel from '../components/ChatPanel'
 
 export default function Chat() {

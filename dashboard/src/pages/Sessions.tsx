@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { RefreshCw, History, MessageSquareText } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { RefreshCw, History } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '../api'
 import SessionList from '../components/SessionList'

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Clock, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle, ChevronRight, RefreshCw } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../api'
 import Skeleton from '../components/Skeleton'

@@ -184,7 +184,7 @@ class AgentRunner:
             # Import lazily — config load, etc. should happen on the worker thread
             from autonoma.main import run
 
-            task = loop.create_task(run())
+            task = loop.create_task(run(agent_runner=self))
             with self._lock:
                 self._task = task
                 self._status = "running"

@@ -31,7 +31,11 @@ from autonoma.skills.registry import SkillRegistry
 logger = logging.getLogger("autonoma")
 
 
-async def run(config_path: str | None = None, log_level: str | None = None) -> None:
+async def run(
+    config_path: str | None = None,
+    log_level: str | None = None,
+    agent_runner: Any | None = None
+) -> None:
     """Main async entry point — wires everything together and starts the system."""
 
     # 1. Load config
@@ -155,7 +159,7 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
         task_queue=task_queue,
         trace_store=trace_store,
         skill_registry=skill_registry,
-        agent_runner=runner,
+        agent_runner=agent_runner,
     )
 
     # 17. Start everything

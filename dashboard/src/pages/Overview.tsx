@@ -17,7 +17,6 @@ export default function Overview() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [recentTraces, setRecentTraces] = useState<TraceItem[]>([])
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const load = () => {
@@ -27,10 +26,8 @@ export default function Overview() {
       ]).then(([s, t]) => {
         setStats(s)
         setRecentTraces(t)
-        setLoading(false)
       }).catch((e) => {
         setError(e.message)
-        setLoading(false)
       })
     }
     load()
