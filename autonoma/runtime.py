@@ -131,12 +131,28 @@ class AgentRunner:
             except RuntimeError:
                 pass  # loop already closed
 
+        joined = True
         if self._thread:
             self._thread.join(timeout=timeout)
+            joined = not self._thread.is_alive()
 
         with self._lock:
-            self._status = "stopped" if not self._error else "error"
             self._start_time = 0.0
+            if not joined:
+                # Join timed out — the thread is still running its shutdown
+                # path. Leave status at "stopping" and surface the timeout so
+                # the caller can see it; do not force "stopped".
+                if not self._error:
+                    self._error = f"agent did not shut down within {timeout}s"
+                self._status = "error"
+                return
+            # Thread has fully exited. _thread_main's finally already set
+            # status to "stopped" or "error" and populated _error on failure.
+            # Respect whatever it wrote rather than clobbering it.
+            if self._error and self._status != "error":
+                self._status = "error"
+            elif not self._error and self._status != "error":
+                self._status = "stopped"
 
     def is_running(self) -> bool:
         with self._lock:

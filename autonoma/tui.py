@@ -31,9 +31,22 @@ BANNER = r"""
 /_/  |_\__,_/\__/\____/_/ /_/\____/_/ /_/ /_/\__,_/
 """
 
-ENV_PATH = Path(".env")
-YAML_PATH = Path("autonoma.yaml")
-LOG_FILE = Path(".session") / "autonoma.log"
+def _resolve_workspace() -> Path:
+    """Pick the directory that holds .env / autonoma.yaml / .session/ for this
+    run. $AUTONOMA_HOME wins if set; otherwise use the cwd captured at import
+    time. The path is resolved ONCE at module load so later os.chdir() calls
+    cannot split a single session across two workspaces.
+    """
+    override = os.environ.get("AUTONOMA_HOME")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path(os.getcwd()).resolve()
+
+
+WORKSPACE = _resolve_workspace()
+ENV_PATH = WORKSPACE / ".env"
+YAML_PATH = WORKSPACE / "autonoma.yaml"
+LOG_FILE = WORKSPACE / ".session" / "autonoma.log"
 
 CHANNEL_ENV = {
     "telegram": ["TELEGRAM_BOT_TOKEN"],
@@ -164,19 +177,40 @@ def read_key(timeout: float | None = None) -> str:
             if ch == "\x03": return KEY_CTRL_C
             if ch in ("\r", "\n"): return KEY_ENTER
             if ch == "\x1b":
-                if select.select([sys.stdin], [], [], 0.05)[0]:
-                    ch2 = sys.stdin.read(1)
-                    if ch2 == "[":
-                        ch3 = sys.stdin.read(1)
-                        arrows = {"A": KEY_UP, "B": KEY_DOWN}
-                        if ch3 in arrows:
-                            return arrows[ch3]
-                        if ch3 == "5":
-                            sys.stdin.read(1); return KEY_PGUP
-                        if ch3 == "6":
-                            sys.stdin.read(1); return KEY_PGDN
-                        if ch3 == "H": return KEY_HOME
-                        if ch3 == "F": return KEY_END
+                # Look for a CSI (ESC [) sequence. If the next byte is NOT '[',
+                # the user pressed either standalone ESC or Alt+<letter>. In
+                # either case we treat the keystroke as ESC and do NOT consume
+                # the follow-up byte, so the menu gets its "back" semantics
+                # without silently eating an Alt-combination's letter.
+                if not select.select([sys.stdin], [], [], 0.05)[0]:
+                    return KEY_ESC
+                # Peek: only advance past '[' once we know a CSI is starting.
+                # We can't unread on a raw tty, so we take the '[' (committing
+                # to CSI) and then read ch3. If ch3 is unrecognized we still
+                # return KEY_ESC but only one stray byte was consumed.
+                ch2 = sys.stdin.read(1)
+                if ch2 != "[":
+                    return KEY_ESC  # Alt+ch2 or lone ESC — drop ch2 quietly
+                if not select.select([sys.stdin], [], [], 0.05)[0]:
+                    return KEY_ESC
+                ch3 = sys.stdin.read(1)
+                arrows = {
+                    "A": KEY_UP, "B": KEY_DOWN,
+                    "C": KEY_RIGHT, "D": KEY_LEFT,
+                }
+                if ch3 in arrows:
+                    return arrows[ch3]
+                if ch3 == "5":
+                    # Consume trailing '~' if present
+                    if select.select([sys.stdin], [], [], 0.05)[0]:
+                        sys.stdin.read(1)
+                    return KEY_PGUP
+                if ch3 == "6":
+                    if select.select([sys.stdin], [], [], 0.05)[0]:
+                        sys.stdin.read(1)
+                    return KEY_PGDN
+                if ch3 == "H": return KEY_HOME
+                if ch3 == "F": return KEY_END
                 return KEY_ESC
             return ch.lower()
         finally:
@@ -192,10 +226,26 @@ class AutonomaTUI:
 
     def __init__(self) -> None:
         self.console = Console()
-        ENV_PATH.touch(exist_ok=True)
-        load_dotenv(ENV_PATH, override=True)
+        # Snapshot the workspace paths on this instance so every method routes
+        # through the same directory, regardless of any later os.chdir() calls
+        # or external module-level patching.
+        self.workspace: Path = WORKSPACE
+        self.env_path: Path = ENV_PATH
+        self.yaml_path: Path = YAML_PATH
+        self.log_file: Path = LOG_FILE
+        self.env_path.parent.mkdir(parents=True, exist_ok=True)
+        self.env_path.touch(exist_ok=True)
+        load_dotenv(self.env_path, override=True)
         self.log_ring: LogRingBuffer | None = None
         self.runner: AgentRunner | None = None
+        # Config cache: (env_mtime, yaml_mtime) -> Config | None. Invalidated
+        # automatically when either file changes on disk, and explicitly by
+        # _invalidate_config_cache() after we mutate them.
+        self._config_cache_key: tuple[float, float] | None = None
+        self._config_cache_value = None
+        # .env load cache: keyed by mtime. Avoids hitting disk 5× per
+        # channel-menu frame when rendering the credentials column.
+        self._env_loaded_mtime: float | None = None
 
     # ----- Entry point -----
 
@@ -216,7 +266,7 @@ class AutonomaTUI:
 
             # Install logging (before agent starts)
             self.log_ring = install_logging(
-                log_file=str(LOG_FILE), level="INFO"
+                log_file=str(self.log_file), level="INFO"
             )
 
             # Auto-start the agent in a background thread
@@ -408,8 +458,8 @@ class AutonomaTUI:
 
     def _manage_menu(self) -> None:
         """Open the manage menu. Agent must be stopped to change config safely."""
-        was_running = self.runner and self.runner.is_running()
-        if was_running:
+        was_running = self.runner is not None and self.runner.is_running()
+        if was_running and self.runner is not None:
             self.console.clear()
             self.console.print(
                 Panel(
@@ -490,7 +540,7 @@ class AutonomaTUI:
         )
         cfg_table.add_row("Workspace", cfg.workspace_dir)
         cfg_table.add_row("Memory DB", cfg.memory.db_path)
-        cfg_table.add_row("Log file", str(LOG_FILE))
+        cfg_table.add_row("Log file", str(self.log_file))
         self.console.print(Panel(cfg_table, title="Configuration", border_style="cyan"))
 
         ch_table = Table(show_header=True, header_style="bold cyan", box=None)
@@ -574,7 +624,8 @@ class AutonomaTUI:
         self._set_env("AUTONOMA_LLM_MODEL", model)
         if api_key:
             self._set_env(env_key_name, api_key)
-        save_yaml_config(YAML_PATH, {"llm": {"provider": provider, "model": model}})
+        save_yaml_config(self.yaml_path, {"llm": {"provider": provider, "model": model}})
+        self._invalidate_config_cache()
 
         self._print_banner()
         self.console.print(
@@ -636,12 +687,22 @@ class AutonomaTUI:
         elif idx == 1:
             self._configure_channel(name)
 
+    def _ensure_env_loaded(self) -> None:
+        """Reload .env into os.environ only if the file changed on disk."""
+        try:
+            mtime = self.env_path.stat().st_mtime if self.env_path.exists() else 0.0
+        except OSError:
+            mtime = 0.0
+        if mtime != self._env_loaded_mtime:
+            load_dotenv(self.env_path, override=True)
+            self._env_loaded_mtime = mtime
+
     def _channel_enabled(self, name: str) -> bool:
-        load_dotenv(ENV_PATH, override=True)
+        self._ensure_env_loaded()
         return all(os.getenv(v) for v in CHANNEL_ENV[name])
 
     def _credential_preview(self, name: str) -> str:
-        load_dotenv(ENV_PATH, override=True)
+        self._ensure_env_loaded()
         parts = []
         for var in CHANNEL_ENV[name]:
             val = os.getenv(var, "")
@@ -708,6 +769,11 @@ class AutonomaTUI:
     ) -> int | None:
         if not items:
             return None
+        # Clamp into range. Accepts negative indices (Python-style from the
+        # end) for completeness and guards against any caller passing a
+        # stale index after items were filtered down.
+        if selected < 0:
+            selected = max(0, len(items) + selected)
         if selected >= len(items):
             selected = 0
         while True:
@@ -766,18 +832,46 @@ class AutonomaTUI:
         return f"{h:02d}:{m:02d}:{s:02d}"
 
     def _is_first_run(self) -> bool:
-        load_dotenv(ENV_PATH, override=True)
-        return not any(
+        load_dotenv(self.env_path, override=True)
+        if any(
             os.getenv(k)
             for k in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "AUTONOMA_LLM_API_KEY")
-        )
+        ):
+            return False
+        # Also accept an inline api_key in autonoma.yaml — the config loader
+        # supports it (cfg.llm.api_key), so a user who hand-configured the
+        # YAML should not be pushed through the wizard again.
+        cfg = self._safe_load_config()
+        if cfg and getattr(cfg.llm, "api_key", None):
+            return False
+        return True
 
     def _safe_load_config(self):
+        # Cache by (env_mtime, yaml_mtime) so repeat renders skip the disk +
+        # YAML parse. A missing file mtime is reported as 0.0.
         try:
-            load_dotenv(ENV_PATH, override=True)
-            return load_config()
+            env_m = self.env_path.stat().st_mtime if self.env_path.exists() else 0.0
+            yaml_m = self.yaml_path.stat().st_mtime if self.yaml_path.exists() else 0.0
+        except OSError:
+            env_m = yaml_m = 0.0
+        key = (env_m, yaml_m)
+        if key == self._config_cache_key:
+            return self._config_cache_value
+        try:
+            load_dotenv(self.env_path, override=True)
+            cfg = load_config(str(self.yaml_path) if self.yaml_path.exists() else None)
         except Exception:
-            return None
+            cfg = None
+        self._config_cache_key = key
+        self._config_cache_value = cfg
+        return cfg
+
+    def _invalidate_config_cache(self) -> None:
+        """Force both the config and .env caches to re-read on their next call.
+        Call after any method that mutates .env or autonoma.yaml."""
+        self._config_cache_key = None
+        self._config_cache_value = None
+        self._env_loaded_mtime = None
 
     def _enabled_channels(self, cfg) -> list[str]:
         out = []
@@ -789,10 +883,15 @@ class AutonomaTUI:
         return out
 
     def _set_env(self, key: str, value: str) -> None:
-        ENV_PATH.touch(exist_ok=True)
+        self.env_path.parent.mkdir(parents=True, exist_ok=True)
+        self.env_path.touch(exist_ok=True)
         self._enable_env(key)
-        set_key(str(ENV_PATH), key, value, quote_mode="never")
+        # quote_mode="always" — unquoted values with spaces break `source .env`
+        # in bash, and values containing '#' get parsed as comments by dotenv
+        # itself. Always quoting preserves credentials with #, $, ", spaces, etc.
+        set_key(str(self.env_path), key, value, quote_mode="always")
         os.environ[key] = value
+        self._invalidate_config_cache()
 
     @staticmethod
     def _env_line_pattern(key: str) -> re.Pattern[str]:
@@ -802,9 +901,9 @@ class AutonomaTUI:
         return re.compile(rf"^(?:export\s+)?{re.escape(key)}\s*=")
 
     def _disable_env(self, key: str) -> bool:
-        if not ENV_PATH.exists():
+        if not self.env_path.exists():
             return False
-        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        lines = self.env_path.read_text(encoding="utf-8").splitlines()
         pattern = self._env_line_pattern(key)
         changed = False
         new_lines = []
@@ -819,14 +918,43 @@ class AutonomaTUI:
             else:
                 new_lines.append(line)
         if changed:
-            ENV_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            self.env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
             os.environ.pop(key, None)
+            self._invalidate_config_cache()
         return changed
 
+    @staticmethod
+    def _unquote_dotenv_value(raw: str) -> str:
+        """Decode a dotenv-style RHS into its literal string value.
+
+        Handles double-quoted (with backslash escapes), single-quoted (literal),
+        and bare values. Strips inline `# comment` tails from bare values only,
+        matching python-dotenv's behavior.
+        """
+        s = raw.strip()
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+            inner = s[1:-1]
+            if s[0] == '"':
+                # Minimal escape handling: \\ \" \n \r \t
+                return (
+                    inner.replace("\\\\", "\x00")
+                         .replace('\\"', '"')
+                         .replace("\\n", "\n")
+                         .replace("\\r", "\r")
+                         .replace("\\t", "\t")
+                         .replace("\x00", "\\")
+                )
+            return inner  # single-quoted: literal
+        # Bare: strip inline comment `  # ...`
+        hash_idx = s.find(" #")
+        if hash_idx >= 0:
+            s = s[:hash_idx].rstrip()
+        return s
+
     def _enable_env(self, key: str) -> bool:
-        if not ENV_PATH.exists():
+        if not self.env_path.exists():
             return False
-        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        lines = self.env_path.read_text(encoding="utf-8").splitlines()
         pattern = self._env_line_pattern(key)
         changed = False
         new_lines = []
@@ -837,14 +965,18 @@ class AutonomaTUI:
                 continue
             body = stripped.lstrip("#").lstrip()
             if pattern.match(body):
+                # Preserve the original body verbatim in the file so the user's
+                # chosen quoting style survives round-trips. os.environ gets the
+                # decoded literal so runtime code sees the true value.
                 new_lines.append(body)
                 changed = True
-                _, _, val = body.partition("=")
-                os.environ[key] = val.strip().strip('"').strip("'")
+                _, _, raw_val = body.partition("=")
+                os.environ[key] = self._unquote_dotenv_value(raw_val)
                 continue
             new_lines.append(line)
         if changed:
-            ENV_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            self.env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            self._invalidate_config_cache()
         return changed
 
     def _pause(self, short: bool = False) -> None:

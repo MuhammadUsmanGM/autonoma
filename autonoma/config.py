@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -179,13 +180,17 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def save_yaml_config(path: str | Path, updates: dict) -> None:
-    """Deep-merge updates into autonoma.yaml (creating it if needed) and write back."""
+    """Deep-merge updates into autonoma.yaml (creating it if needed) and write back.
+
+    The caller's `updates` dict is not mutated; `_deep_merge` modifies only
+    the freshly loaded `existing` copy.
+    """
     p = Path(path)
     existing: dict = {}
     if p.exists():
         with open(p, "r", encoding="utf-8") as f:
             existing = yaml.safe_load(f) or {}
-    merged = _deep_merge(existing, updates)
+    merged = _deep_merge(existing, copy.deepcopy(updates))
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w", encoding="utf-8") as f:
         yaml.safe_dump(merged, f, default_flow_style=False, sort_keys=False)
