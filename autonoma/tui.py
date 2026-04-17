@@ -1,4 +1,4 @@
-"""Autonoma interactive TUI — arrow-key navigable control panel."""
+"""Autonoma TUI — control tower: auto-start agent, live log panel, hotkey actions."""
 
 from __future__ import annotations
 
@@ -6,20 +6,22 @@ import asyncio
 import getpass
 import os
 import sys
+import time
 import webbrowser
 from pathlib import Path
 
 from dotenv import load_dotenv, set_key
 from rich.align import Align
-from rich.console import Console
+from rich.console import Console, Group
+from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
 from autonoma.config import load_config, save_yaml_config
+from autonoma.runtime import AgentRunner, LogRingBuffer, install_logging
 
 BANNER = r"""
     ___         __
@@ -31,6 +33,7 @@ BANNER = r"""
 
 ENV_PATH = Path(".env")
 YAML_PATH = Path("autonoma.yaml")
+LOG_FILE = Path(".session") / "autonoma.log"
 
 CHANNEL_ENV = {
     "telegram": ["TELEGRAM_BOT_TOKEN"],
@@ -67,310 +70,451 @@ MODEL_SUGGESTIONS = {
     ],
 }
 
-# --- Key codes ---
+# --- Keys ---
 KEY_UP = "UP"
 KEY_DOWN = "DOWN"
-KEY_LEFT = "LEFT"
-KEY_RIGHT = "RIGHT"
 KEY_ENTER = "ENTER"
 KEY_ESC = "ESC"
 KEY_CTRL_C = "CTRL_C"
+KEY_PGUP = "PGUP"
+KEY_PGDN = "PGDN"
+KEY_HOME = "HOME"
+KEY_END = "END"
 
 
-def read_key() -> str:
-    """Read a single keypress cross-platform. Returns a key code or the raw char."""
+def read_key(timeout: float | None = None) -> str:
+    """Read a keypress. Returns key code or raw char. timeout=None blocks."""
     if os.name == "nt":
         import msvcrt
+        if timeout is not None:
+            deadline = time.time() + timeout
+            while not msvcrt.kbhit():
+                if time.time() >= deadline:
+                    return ""
+                time.sleep(0.02)
         ch = msvcrt.getch()
-        if ch == b"\x03":
-            return KEY_CTRL_C
-        if ch == b"\x1b":
-            return KEY_ESC
-        if ch in (b"\r", b"\n"):
-            return KEY_ENTER
+        if ch == b"\x03": return KEY_CTRL_C
+        if ch == b"\x1b": return KEY_ESC
+        if ch in (b"\r", b"\n"): return KEY_ENTER
         if ch in (b"\x00", b"\xe0"):
-            # Extended key — next byte identifies the arrow
             ch2 = msvcrt.getch()
             return {
-                b"H": KEY_UP,
-                b"P": KEY_DOWN,
-                b"K": KEY_LEFT,
-                b"M": KEY_RIGHT,
+                b"H": KEY_UP, b"P": KEY_DOWN,
+                b"I": KEY_PGUP, b"Q": KEY_PGDN,
+                b"G": KEY_HOME, b"O": KEY_END,
             }.get(ch2, "")
         try:
-            return ch.decode("utf-8", errors="ignore")
+            return ch.decode("utf-8", errors="ignore").lower()
         except Exception:
             return ""
     else:
+        import select
         import termios
         import tty
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         try:
             tty.setraw(fd)
+            if timeout is not None:
+                if not select.select([sys.stdin], [], [], timeout)[0]:
+                    return ""
             ch = sys.stdin.read(1)
-            if ch == "\x03":
-                return KEY_CTRL_C
-            if ch == "\r" or ch == "\n":
-                return KEY_ENTER
+            if ch == "\x03": return KEY_CTRL_C
+            if ch in ("\r", "\n"): return KEY_ENTER
             if ch == "\x1b":
-                # Peek for escape sequence (arrow keys are ESC [ A/B/C/D)
-                # Use non-blocking read
-                import select
                 if select.select([sys.stdin], [], [], 0.05)[0]:
                     ch2 = sys.stdin.read(1)
                     if ch2 == "[":
                         ch3 = sys.stdin.read(1)
-                        return {
-                            "A": KEY_UP,
-                            "B": KEY_DOWN,
-                            "C": KEY_RIGHT,
-                            "D": KEY_LEFT,
-                        }.get(ch3, KEY_ESC)
+                        arrows = {"A": KEY_UP, "B": KEY_DOWN}
+                        if ch3 in arrows:
+                            return arrows[ch3]
+                        if ch3 == "5":
+                            sys.stdin.read(1); return KEY_PGUP
+                        if ch3 == "6":
+                            sys.stdin.read(1); return KEY_PGDN
+                        if ch3 == "H": return KEY_HOME
+                        if ch3 == "F": return KEY_END
                 return KEY_ESC
-            return ch
+            return ch.lower()
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 class BackSignal(Exception):
-    """Raised to pop back one screen (ESC)."""
+    """Pop back one screen (ESC)."""
 
 
 class AutonomaTUI:
-    """Interactive control panel for the Autonoma agent."""
+    """Control tower TUI — auto-starts agent, shows live logs, hotkey actions."""
 
     def __init__(self) -> None:
         self.console = Console()
         ENV_PATH.touch(exist_ok=True)
         load_dotenv(ENV_PATH, override=True)
+        self.log_ring: LogRingBuffer | None = None
+        self.runner: AgentRunner | None = None
 
-    # ----- Public entry point -----
+    # ----- Entry point -----
 
     def run(self) -> None:
         try:
+            # Forced first-run setup
             if self._is_first_run():
                 self._print_banner()
                 self.console.print(
                     Panel(
                         "[bold yellow]Welcome to Autonoma![/]\n\n"
-                        "Looks like this is your first run. Let's get you set up.\n"
-                        "[dim](Press ESC at any time to skip, Ctrl+C to quit.)[/]",
+                        "No API key found — you must complete setup before the agent can start.\n"
+                        "[dim]Press Ctrl+C to quit without setting up.[/]",
                         border_style="yellow",
                     )
                 )
-                try:
-                    self._setup_wizard()
-                except BackSignal:
-                    pass
-            self._main_menu_loop()
-        except KeyboardInterrupt:
-            self.console.print("\n[dim]Goodbye.[/]\n")
+                self._setup_wizard(forced=True)
 
-    # ----- Main menu -----
-
-    def _main_menu_loop(self) -> None:
-        items = [
-            ("Start agent", self._start_agent),
-            ("Open dashboard", self._open_dashboard),
-            ("Setup (provider / API key / model)", self._setup_wizard),
-            ("Channels (enable, disable, configure)", self._channel_menu),
-            ("Status", self._show_status),
-            ("Quit", None),
-        ]
-        selected = 0
-        while True:
-            selected = self._arrow_select(
-                title=None,
-                items=[label for label, _ in items],
-                selected=selected,
-                header_renderer=self._render_main_header,
-                allow_back=False,
+            # Install logging (before agent starts)
+            self.log_ring = install_logging(
+                log_file=str(LOG_FILE), level="INFO"
             )
-            if selected is None or items[selected][1] is None:
-                self.console.print("\n[dim]Goodbye.[/]\n")
-                return
-            try:
-                items[selected][1]()
-            except BackSignal:
-                continue
 
-    def _render_main_header(self) -> None:
-        self._print_banner()
+            # Auto-start the agent in a background thread
+            self.runner = AgentRunner()
+            self.runner.start()
+
+            # Enter the control tower
+            self._control_tower()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self._shutdown()
+
+    def _shutdown(self) -> None:
+        if self.runner and self.runner.status() not in ("stopped",):
+            self.console.clear()
+            self.console.print("[yellow]Stopping agent…[/]")
+            self.runner.stop()
+        self.console.print("[dim]Goodbye.[/]\n")
+
+    # ----- Control tower (main screen) -----
+
+    def _control_tower(self) -> None:
+        """Live-refreshing control screen. Hotkeys: L/D/M/R/Q."""
+        stop_requested = False
+        with Live(
+            self._render_tower(),
+            console=self.console,
+            refresh_per_second=4,
+            screen=False,
+        ) as live:
+            while not stop_requested:
+                # Blocking read with short timeout so we keep refreshing
+                key = read_key(timeout=0.5)
+                live.update(self._render_tower())
+
+                if key == KEY_CTRL_C or key == "q":
+                    stop_requested = True
+                    break
+                if not key:
+                    continue
+
+                # Exit Live before running a screen that uses the full console
+                if key in ("l", "d", "m", "r", "s"):
+                    live.stop()
+                    try:
+                        if key == "l":
+                            self._logs_viewer()
+                        elif key == "d":
+                            self._open_dashboard()
+                        elif key == "m":
+                            self._manage_menu()
+                        elif key == "r":
+                            self._restart_agent()
+                        elif key == "s":
+                            self._show_status()
+                    except BackSignal:
+                        pass
+                    live.start()
+                    live.update(self._render_tower())
+
+    def _render_tower(self):
         cfg = self._safe_load_config()
-        provider = cfg.llm.provider if cfg else "?"
-        model = cfg.llm.model if cfg else "?"
-        has_key = bool(cfg and cfg.llm.api_key)
-        enabled = self._enabled_channels(cfg) if cfg else []
+        runner = self.runner
+        status = runner.status() if runner else "stopped"
+        err = runner.error() if runner else None
+        uptime = runner.uptime() if runner else 0
+
+        # Header
+        banner = Text(BANNER, style="bold cyan")
+
+        # Status line
+        status_colors = {
+            "running": "green",
+            "starting": "yellow",
+            "stopping": "yellow",
+            "stopped": "dim",
+            "error": "red",
+        }
+        status_color = status_colors.get(status, "white")
+        status_text = Text()
+        status_text.append("● ", style=status_color)
+        status_text.append(status.upper(), style=f"bold {status_color}")
+        if err:
+            status_text.append(f"  {err}", style="red")
 
         info = Table.grid(padding=(0, 2))
         info.add_column(style="dim")
         info.add_column()
-        info.add_row("Provider", f"[bold]{provider}[/] · {model}")
-        info.add_row(
-            "API key", "[green]✓ configured[/]" if has_key else "[red]✗ missing[/]"
+        info.add_row("Status", status_text)
+        info.add_row("Uptime", self._fmt_uptime(uptime))
+        if cfg:
+            info.add_row(
+                "Provider", f"[bold]{cfg.llm.provider}[/] · {cfg.llm.model}"
+            )
+            enabled = self._enabled_channels(cfg)
+            info.add_row(
+                "Channels",
+                ", ".join(enabled) if enabled else "[dim](none — CLI only)[/]",
+            )
+            info.add_row(
+                "Dashboard",
+                f"[cyan]http://{cfg.gateway.host}:{cfg.gateway.http_port}[/]",
+            )
+
+        # Log tail
+        lines = self.log_ring.tail(12) if self.log_ring else []
+        log_body = (
+            "\n".join(lines) if lines else "[dim](no log entries yet)[/]"
         )
-        info.add_row(
-            "Channels",
-            ", ".join(enabled) if enabled else "[dim](none enabled)[/]",
+
+        # Hotkey bar
+        hotkeys = Text()
+        hotkeys.append(" [L] ", style="bold cyan"); hotkeys.append("Logs   ")
+        hotkeys.append(" [D] ", style="bold cyan"); hotkeys.append("Dashboard   ")
+        hotkeys.append(" [M] ", style="bold cyan"); hotkeys.append("Manage   ")
+        hotkeys.append(" [S] ", style="bold cyan"); hotkeys.append("Status   ")
+        hotkeys.append(" [R] ", style="bold cyan"); hotkeys.append("Restart   ")
+        hotkeys.append(" [Q] ", style="bold cyan"); hotkeys.append("Quit")
+
+        return Group(
+            Align.center(banner),
+            Align.center(Text("AI Agent Platform · control tower", style="dim")),
+            Panel(info, border_style=status_color, title="Autonoma"),
+            Panel(log_body, border_style="dim", title="Live logs (last 12)", height=16),
+            Align.center(hotkeys),
         )
-        self.console.print(Panel(info, border_style="dim", title="Current setup"))
 
-    def _print_banner(self) -> None:
-        self.console.clear()
-        self.console.print(Align.center(Text(BANNER, style="bold cyan")))
-        self.console.print(
-            Align.center(Text("AI Agent Platform · control panel", style="dim"))
-        )
-        self.console.print()
+    # ----- [L] Logs viewer -----
 
-    # ----- Arrow-key select primitive -----
+    def _logs_viewer(self) -> None:
+        """Fullscreen live-tailing log view. ESC or Q to exit."""
+        with Live(
+            self._render_logs(tail_only=True, scroll=0),
+            console=self.console,
+            refresh_per_second=6,
+            screen=True,
+        ) as live:
+            scroll = 0
+            follow = True  # auto-scroll to bottom
+            while True:
+                key = read_key(timeout=0.3)
+                if key == KEY_ESC or key == "q":
+                    break
+                if key == KEY_CTRL_C:
+                    raise KeyboardInterrupt
+                if key == KEY_UP:
+                    scroll += 1; follow = False
+                elif key == KEY_DOWN:
+                    scroll = max(0, scroll - 1)
+                    if scroll == 0:
+                        follow = True
+                elif key == KEY_PGUP:
+                    scroll += 20; follow = False
+                elif key == KEY_PGDN:
+                    scroll = max(0, scroll - 20)
+                    if scroll == 0:
+                        follow = True
+                elif key == KEY_HOME:
+                    scroll = 10_000_000; follow = False
+                elif key == KEY_END:
+                    scroll = 0; follow = True
+                elif key == "c":
+                    if self.log_ring:
+                        self.log_ring.clear()
+                    scroll = 0; follow = True
 
-    def _arrow_select(
-        self,
-        *,
-        title: str | None,
-        items: list[str],
-        selected: int = 0,
-        header_renderer=None,
-        allow_back: bool = True,
-        footer: str | None = None,
-    ) -> int | None:
-        """Render a menu, navigate with ↑/↓, Enter to select, ESC to back, Ctrl+C to quit.
+                live.update(self._render_logs(tail_only=follow, scroll=scroll))
 
-        Returns the selected index, or None if ESC was pressed with allow_back=True.
-        Raises KeyboardInterrupt on Ctrl+C.
-        """
-        if not items:
-            return None
-        if selected >= len(items):
-            selected = 0
+    def _render_logs(self, *, tail_only: bool, scroll: int):
+        size = self.console.size
+        body_height = max(5, size.height - 4)
 
-        while True:
-            self.console.clear()
-            if header_renderer:
-                header_renderer()
-            if title:
-                self.console.print(Rule(title, style="cyan"))
-                self.console.print()
-
-            for i, label in enumerate(items):
-                if i == selected:
-                    self.console.print(f"  [bold cyan]▶ {label}[/]")
-                else:
-                    self.console.print(f"    [dim]{label}[/]")
-
-            self.console.print()
-            hint = "[dim]↑/↓ navigate · Enter select"
-            if allow_back:
-                hint += " · ESC back"
-            hint += " · Ctrl+C quit[/]"
-            if footer:
-                self.console.print(f"[dim]{footer}[/]")
-            self.console.print(hint)
-
-            key = read_key()
-            if key == KEY_CTRL_C:
-                raise KeyboardInterrupt
-            if key == KEY_ESC:
-                if allow_back:
-                    return None
-                continue
-            if key == KEY_UP:
-                selected = (selected - 1) % len(items)
-            elif key == KEY_DOWN:
-                selected = (selected + 1) % len(items)
-            elif key == KEY_ENTER:
-                return selected
-
-    def _prompt_line(
-        self, label: str, *, secret: bool = False, default: str = ""
-    ) -> str:
-        """Read a line of input. ESC returns BackSignal, Ctrl+C propagates.
-
-        Uses native input — arrow keys not handled here, but ESC/Ctrl+C are via stdin tty.
-        """
-        self.console.print(label)
-        if default:
-            self.console.print(f"[dim](current: {self._mask(default)} — Enter to keep)[/]")
-        try:
-            if secret:
-                value = getpass.getpass("  › ").strip()
+        all_lines = self.log_ring.all() if self.log_ring else []
+        if not all_lines:
+            body = "[dim](no log entries yet — waiting for agent activity…)[/]"
+        else:
+            if tail_only:
+                shown = all_lines[-body_height:]
             else:
-                value = self.console.input("  › ").strip()
-        except EOFError:
-            raise BackSignal
-        except KeyboardInterrupt:
-            raise
-        return value if value else default
+                end = len(all_lines) - scroll
+                start = max(0, end - body_height)
+                shown = all_lines[start:end]
+            body = "\n".join(shown)
 
-    @staticmethod
-    def _mask(val: str) -> str:
-        if len(val) <= 8:
-            return "***"
-        return val[:4] + "…" + val[-2:]
+        title = f"Logs ({len(all_lines)} entries)"
+        if not tail_only:
+            title += f" · scrolled {scroll}"
 
-    # ----- [1] Start agent -----
-
-    def _start_agent(self) -> None:
-        cfg = self._safe_load_config()
-        if not cfg or not cfg.llm.api_key:
-            self.console.print(
-                "\n[red]No API key configured.[/] Run [bold]Setup[/] first."
-            )
-            self._pause()
-            return
-
-        self._print_banner()
-        enabled = self._enabled_channels(cfg)
-        self.console.print(
-            Panel(
-                f"Provider: [bold]{cfg.llm.provider}[/] · Model: [bold]{cfg.llm.model}[/]\n"
-                f"Channels: {', '.join(enabled) if enabled else '[dim](CLI only)[/]'}\n"
-                f"Dashboard: [cyan]http://{cfg.gateway.host}:{cfg.gateway.http_port}[/]\n\n"
-                "[dim]Press Ctrl+C to stop the agent and return to the menu.[/]",
-                title="Starting Autonoma",
-                border_style="green",
-            )
+        footer = Text(
+            " ↑/↓ scroll · PgUp/PgDn page · End tail · C clear · ESC back ",
+            style="dim",
+        )
+        return Group(
+            Panel(body, title=title, border_style="cyan"),
+            Align.center(footer),
         )
 
-        from autonoma.main import run
-        try:
-            asyncio.run(run())
-        except KeyboardInterrupt:
-            self.console.print("\n[yellow]Agent stopped.[/]")
-        except SystemExit:
-            self.console.print("\n[red]Agent exited with error.[/]")
-        except Exception as e:
-            self.console.print(f"\n[red]Agent crashed:[/] {e}")
-        self._pause()
-
-    # ----- [2] Open dashboard -----
+    # ----- [D] Dashboard -----
 
     def _open_dashboard(self) -> None:
         cfg = self._safe_load_config()
         port = cfg.gateway.http_port if cfg else 8766
         url = f"http://localhost:{port}"
-        self.console.print(f"\nOpening [cyan]{url}[/] in your browser…")
+        self.console.clear()
+        self.console.print(f"\nOpening [cyan]{url}[/]…")
         try:
             webbrowser.open(url)
-            self.console.print(
-                "[dim]Note: dashboard only serves while the agent is running.[/]"
-            )
+            self.console.print("[green]✓ Browser launched.[/]")
         except Exception as e:
             self.console.print(f"[red]Could not open browser:[/] {e}")
         self._pause()
 
-    # ----- [3] Setup wizard -----
+    # ----- [M] Manage (stops agent, shows menu, restarts) -----
 
-    def _setup_wizard(self) -> None:
-        # Step 1: provider
+    def _manage_menu(self) -> None:
+        """Open the manage menu. Agent must be stopped to change config safely."""
+        was_running = self.runner and self.runner.is_running()
+        if was_running:
+            self.console.clear()
+            self.console.print(
+                Panel(
+                    "[yellow]Stopping agent to safely change configuration…[/]",
+                    border_style="yellow",
+                )
+            )
+            self.runner.stop()
+
+        try:
+            while True:
+                idx = self._arrow_select(
+                    title="[bold]Manage[/]",
+                    items=[
+                        "Setup (provider / API key / model)",
+                        "Channels (enable, disable, configure)",
+                        "Back to control tower",
+                    ],
+                    header_renderer=self._print_banner,
+                    allow_back=True,
+                )
+                if idx is None or idx == 2:
+                    break
+                if idx == 0:
+                    try:
+                        self._setup_wizard()
+                    except BackSignal:
+                        pass
+                elif idx == 1:
+                    try:
+                        self._channel_menu()
+                    except BackSignal:
+                        pass
+        finally:
+            if was_running:
+                self.console.clear()
+                self.console.print("[green]Restarting agent with new config…[/]")
+                self.runner = AgentRunner()
+                self.runner.start()
+                time.sleep(0.5)
+
+    # ----- [R] Restart -----
+
+    def _restart_agent(self) -> None:
+        if not self.runner:
+            return
+        self.console.clear()
+        self.console.print("[yellow]Restarting agent…[/]")
+        self.runner.stop()
+        self.runner = AgentRunner()
+        self.runner.start()
+        time.sleep(0.5)
+
+    # ----- [S] Status -----
+
+    def _show_status(self) -> None:
+        self._print_banner()
+        self.console.print(Rule("[bold]Status[/]", style="cyan"))
+        cfg = self._safe_load_config()
+        if not cfg:
+            self.console.print("[red]Could not load config.[/]")
+            self._pause()
+            return
+
+        cfg_table = Table(show_header=False, box=None, padding=(0, 2))
+        cfg_table.add_column(style="dim")
+        cfg_table.add_column()
+        cfg_table.add_row("Name", cfg.name)
+        cfg_table.add_row("Provider", cfg.llm.provider)
+        cfg_table.add_row("Model", cfg.llm.model)
+        cfg_table.add_row(
+            "API key",
+            "[green]✓ configured[/]" if cfg.llm.api_key else "[red]✗ missing[/]",
+        )
+        cfg_table.add_row("Gateway", f"{cfg.gateway.host}:{cfg.gateway.port}")
+        cfg_table.add_row(
+            "Dashboard", f"http://{cfg.gateway.host}:{cfg.gateway.http_port}"
+        )
+        cfg_table.add_row("Workspace", cfg.workspace_dir)
+        cfg_table.add_row("Memory DB", cfg.memory.db_path)
+        cfg_table.add_row("Log file", str(LOG_FILE))
+        self.console.print(Panel(cfg_table, title="Configuration", border_style="cyan"))
+
+        ch_table = Table(show_header=True, header_style="bold cyan", box=None)
+        ch_table.add_column("Channel")
+        ch_table.add_column("Enabled")
+        for name in CHANNEL_ENV:
+            ch_table.add_row(
+                name, "[green]✓[/]" if self._channel_enabled(name) else "[dim]—[/]"
+            )
+        self.console.print(Panel(ch_table, title="Channels", border_style="cyan"))
+
+        try:
+            from autonoma.memory.database import MemoryDatabase
+            Path(cfg.memory.db_path).parent.mkdir(parents=True, exist_ok=True)
+            db = MemoryDatabase(cfg.memory.db_path)
+            total_active = db.count(active_only=True)
+            total_all = db.count(active_only=False)
+            expiry = db.get_expiry_stats()
+            db.close()
+            mem_table = Table(show_header=False, box=None, padding=(0, 2))
+            mem_table.add_column(style="dim")
+            mem_table.add_column()
+            mem_table.add_row("Active memories", str(total_active))
+            mem_table.add_row("Archived", str(total_all - total_active))
+            mem_table.add_row("Stale (needs review)", str(expiry.get("stale", 0)))
+            mem_table.add_row("Expired", str(expiry.get("expired", 0)))
+            self.console.print(Panel(mem_table, title="Memory", border_style="cyan"))
+        except Exception as e:
+            self.console.print(f"[dim]Memory stats unavailable: {e}[/]")
+
+        self._pause()
+
+    # ----- Setup wizard -----
+
+    def _setup_wizard(self, forced: bool = False) -> None:
         idx = self._arrow_select(
             title="[bold]Step 1 of 3 — LLM provider[/]",
             items=[f"{name}  —  {desc}" for name, desc in PROVIDERS],
-            selected=0,
             header_renderer=self._print_banner,
-            allow_back=True,
+            allow_back=not forced,
         )
         if idx is None:
             return
@@ -379,7 +523,6 @@ class AutonomaTUI:
             "OPENROUTER_API_KEY" if provider == "openrouter" else "ANTHROPIC_API_KEY"
         )
 
-        # Step 2: API key (text input; ESC-to-back handled by empty-Enter)
         self._print_banner()
         self.console.print(Rule("[bold]Step 2 of 3 — API key[/]", style="cyan"))
         self.console.print(f"Will be saved to .env as [cyan]{env_key_name}[/]")
@@ -389,15 +532,13 @@ class AutonomaTUI:
         except KeyboardInterrupt:
             raise
 
-        # Step 3: model
         suggestions = MODEL_SUGGESTIONS[provider]
         options = list(suggestions) + ["Custom (type your own)"]
         idx = self._arrow_select(
             title=f"[bold]Step 3 of 3 — Model[/] [dim](provider: {provider})[/]",
             items=options,
-            selected=0,
             header_renderer=self._print_banner,
-            allow_back=True,
+            allow_back=not forced,
         )
         if idx is None:
             return
@@ -413,7 +554,6 @@ class AutonomaTUI:
         else:
             model = suggestions[idx]
 
-        # Persist
         self._set_env("AUTONOMA_LLM_PROVIDER", provider)
         self._set_env("AUTONOMA_LLM_MODEL", model)
         if api_key:
@@ -429,7 +569,7 @@ class AutonomaTUI:
         )
         self._pause()
 
-    # ----- [4] Channel menu -----
+    # ----- Channel menu -----
 
     def _channel_menu(self) -> None:
         channels = list(CHANNEL_ENV.keys())
@@ -444,42 +584,34 @@ class AutonomaTUI:
                 table.add_column("Credentials")
                 for name in channels:
                     on = self._channel_enabled(name)
-                    creds = self._credential_preview(name)
-                    status = "[green]● enabled[/]" if on else "[dim]○ disabled[/]"
-                    table.add_row(name, status, creds)
+                    table.add_row(
+                        name,
+                        "[green]● enabled[/]" if on else "[dim]○ disabled[/]",
+                        self._credential_preview(name),
+                    )
                 self.console.print(table)
                 self.console.print()
 
-            # Build menu items: one per channel + a "Back" row
             items = [
                 f"{name:<10} — {'disable' if self._channel_enabled(name) else 'enable'} / configure"
                 for name in channels
             ]
-
             idx = self._arrow_select(
                 title=None,
                 items=items,
                 selected=selected,
                 header_renderer=header,
                 allow_back=True,
-                footer="Enter: toggle   ·   → or 'c': configure credentials",
             )
             if idx is None:
                 return
             selected = idx
-            # After Enter we need to decide: toggle or configure.
-            # We support 'c' or → to configure via a second keypress prompt.
             self._channel_action_prompt(channels[idx])
 
     def _channel_action_prompt(self, name: str) -> None:
-        """Ask: toggle or configure?"""
         idx = self._arrow_select(
             title=f"[bold]{name}[/]",
-            items=[
-                "Toggle enable/disable",
-                "Configure credentials",
-            ],
-            selected=0,
+            items=["Toggle enable/disable", "Configure credentials"],
             header_renderer=self._print_banner,
             allow_back=True,
         )
@@ -507,7 +639,7 @@ class AutonomaTUI:
         if self._channel_enabled(name):
             for var in CHANNEL_ENV[name]:
                 self._disable_env(var)
-            self.console.print(f"\n[yellow]✓ {name} disabled (credentials preserved).[/]")
+            self.console.print(f"\n[yellow]✓ {name} disabled.[/]")
         else:
             reenabled = False
             for var in CHANNEL_ENV[name]:
@@ -547,66 +679,75 @@ class AutonomaTUI:
         self.console.print(f"\n[green]✓ {name} configured.[/]")
         self._pause(short=True)
 
-    # ----- [5] Status -----
+    # ----- Primitives -----
 
-    def _show_status(self) -> None:
-        self._print_banner()
-        self.console.print(Rule("[bold]Status[/]", style="cyan"))
-        cfg = self._safe_load_config()
-        if not cfg:
-            self.console.print("[red]Could not load config.[/]")
-            self._pause()
-            return
+    def _arrow_select(
+        self,
+        *,
+        title: str | None,
+        items: list[str],
+        selected: int = 0,
+        header_renderer=None,
+        allow_back: bool = True,
+    ) -> int | None:
+        if not items:
+            return None
+        if selected >= len(items):
+            selected = 0
+        while True:
+            self.console.clear()
+            if header_renderer:
+                header_renderer()
+            if title:
+                self.console.print(Rule(title, style="cyan"))
+                self.console.print()
+            for i, label in enumerate(items):
+                if i == selected:
+                    self.console.print(f"  [bold cyan]▶ {label}[/]")
+                else:
+                    self.console.print(f"    [dim]{label}[/]")
+            self.console.print()
+            hint = "[dim]↑/↓ navigate · Enter select"
+            if allow_back:
+                hint += " · ESC back"
+            hint += " · Ctrl+C quit[/]"
+            self.console.print(hint)
 
-        cfg_table = Table(show_header=False, box=None, padding=(0, 2))
-        cfg_table.add_column(style="dim")
-        cfg_table.add_column()
-        cfg_table.add_row("Name", cfg.name)
-        cfg_table.add_row("Provider", cfg.llm.provider)
-        cfg_table.add_row("Model", cfg.llm.model)
-        cfg_table.add_row(
-            "API key",
-            "[green]✓ configured[/]" if cfg.llm.api_key else "[red]✗ missing[/]",
+            key = read_key()
+            if key == KEY_CTRL_C:
+                raise KeyboardInterrupt
+            if key == KEY_ESC and allow_back:
+                return None
+            if key == KEY_UP:
+                selected = (selected - 1) % len(items)
+            elif key == KEY_DOWN:
+                selected = (selected + 1) % len(items)
+            elif key == KEY_ENTER:
+                return selected
+
+    def _print_banner(self) -> None:
+        self.console.clear()
+        self.console.print(Align.center(Text(BANNER, style="bold cyan")))
+        self.console.print(
+            Align.center(Text("AI Agent Platform · control panel", style="dim"))
         )
-        cfg_table.add_row("Gateway", f"{cfg.gateway.host}:{cfg.gateway.port}")
-        cfg_table.add_row(
-            "Dashboard", f"http://{cfg.gateway.host}:{cfg.gateway.http_port}"
-        )
-        cfg_table.add_row("Workspace", cfg.workspace_dir)
-        cfg_table.add_row("Memory DB", cfg.memory.db_path)
-        self.console.print(Panel(cfg_table, title="Configuration", border_style="cyan"))
-
-        ch_table = Table(show_header=True, header_style="bold cyan", box=None)
-        ch_table.add_column("Channel")
-        ch_table.add_column("Enabled")
-        for name in CHANNEL_ENV:
-            ch_table.add_row(
-                name, "[green]✓[/]" if self._channel_enabled(name) else "[dim]—[/]"
-            )
-        self.console.print(Panel(ch_table, title="Channels", border_style="cyan"))
-
-        try:
-            from autonoma.memory.database import MemoryDatabase
-            Path(cfg.memory.db_path).parent.mkdir(parents=True, exist_ok=True)
-            db = MemoryDatabase(cfg.memory.db_path)
-            total_active = db.count(active_only=True)
-            total_all = db.count(active_only=False)
-            expiry = db.get_expiry_stats()
-            db.close()
-            mem_table = Table(show_header=False, box=None, padding=(0, 2))
-            mem_table.add_column(style="dim")
-            mem_table.add_column()
-            mem_table.add_row("Active memories", str(total_active))
-            mem_table.add_row("Archived", str(total_all - total_active))
-            mem_table.add_row("Stale (needs review)", str(expiry.get("stale", 0)))
-            mem_table.add_row("Expired", str(expiry.get("expired", 0)))
-            self.console.print(Panel(mem_table, title="Memory", border_style="cyan"))
-        except Exception as e:
-            self.console.print(f"[dim]Memory stats unavailable: {e}[/]")
-
-        self._pause()
+        self.console.print()
 
     # ----- Helpers -----
+
+    @staticmethod
+    def _mask(val: str) -> str:
+        if len(val) <= 8:
+            return "***"
+        return val[:4] + "…" + val[-2:]
+
+    @staticmethod
+    def _fmt_uptime(sec: int) -> str:
+        if sec <= 0:
+            return "[dim]—[/]"
+        h, rem = divmod(sec, 3600)
+        m, s = divmod(rem, 60)
+        return f"{h:02d}:{m:02d}:{s:02d}"
 
     def _is_first_run(self) -> bool:
         load_dotenv(ENV_PATH, override=True)
@@ -619,8 +760,7 @@ class AutonomaTUI:
         try:
             load_dotenv(ENV_PATH, override=True)
             return load_config()
-        except Exception as e:
-            self.console.print(f"[red]Failed to load config:[/] {e}")
+        except Exception:
             return None
 
     def _enabled_channels(self, cfg) -> list[str]:
