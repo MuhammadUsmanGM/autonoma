@@ -162,3 +162,30 @@ def load_config(config_path: str | None = None) -> Config:
         config.channels.rest.api_token = token
 
     return config
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base. Returns the modified base."""
+    for key, value in override.items():
+        if (
+            key in base
+            and isinstance(base[key], dict)
+            and isinstance(value, dict)
+        ):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def save_yaml_config(path: str | Path, updates: dict) -> None:
+    """Deep-merge updates into autonoma.yaml (creating it if needed) and write back."""
+    p = Path(path)
+    existing: dict = {}
+    if p.exists():
+        with open(p, "r", encoding="utf-8") as f:
+            existing = yaml.safe_load(f) or {}
+    merged = _deep_merge(existing, updates)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        yaml.safe_dump(merged, f, default_flow_style=False, sort_keys=False)

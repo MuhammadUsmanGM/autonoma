@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 from autonoma.config import load_config
 from autonoma.cortex.agent import Agent
@@ -168,12 +169,21 @@ async def run(config_path: str | None = None, log_level: str | None = None) -> N
 
 
 def cli_entry() -> None:
-    """Synchronous entry point for the `autonoma` console script."""
+    """Synchronous entry point for the `autonoma` console script.
+
+    With no arguments, launches the interactive TUI control panel.
+    With --start or -c, launches the agent directly (headless / CI mode).
+    """
     parser = argparse.ArgumentParser(
         description="Autonoma — AI Agent Platform"
     )
     parser.add_argument(
         "-c", "--config", default=None, help="Path to config YAML file"
+    )
+    parser.add_argument(
+        "--start",
+        action="store_true",
+        help="Start the agent directly, bypassing the TUI.",
     )
     parser.add_argument(
         "--log-level",
@@ -183,8 +193,18 @@ def cli_entry() -> None:
     )
     args = parser.parse_args()
 
+    # Direct-start mode (headless / CI) — skip TUI
+    if args.start or args.config:
+        try:
+            asyncio.run(run(config_path=args.config, log_level=args.log_level))
+        except KeyboardInterrupt:
+            print("\nGoodbye.")
+        return
+
+    # Default: launch interactive TUI
     try:
-        asyncio.run(run(config_path=args.config, log_level=args.log_level))
+        from autonoma.tui import AutonomaTUI
+        AutonomaTUI().run()
     except KeyboardInterrupt:
         print("\nGoodbye.")
 
