@@ -13,7 +13,6 @@ from pathlib import Path
 from dotenv import load_dotenv, set_key
 from rich.align import Align
 from rich.console import Console, Group
-from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.rule import Rule
@@ -195,58 +194,44 @@ class AutonomaTUI:
             self.runner.stop()
         self.console.print("[dim]Goodbye.[/]\n")
 
-    # ----- Control tower (main screen) -----
+    # ----- Main menu -----
 
     def _control_tower(self) -> None:
-        """Live-refreshing control screen. Hotkeys: L/D/M/R/Q."""
-        stop_requested = False
-        with Live(
-            self._render_tower(),
-            console=self.console,
-            refresh_per_second=4,
-            screen=False,
-        ) as live:
-            while not stop_requested:
-                # Blocking read with short timeout so we keep refreshing
-                key = read_key(timeout=0.5)
-                live.update(self._render_tower())
+        """Arrow-key navigable main menu. Agent runs in background."""
+        items = [
+            ("Live logs", self._logs_viewer),
+            ("Manage configuration", self._manage_menu),
+            ("Open web dashboard", self._open_dashboard),
+            ("Check status", self._show_status),
+            ("Restart Autonoma", self._restart_agent),
+            ("Quit", None),
+        ]
+        selected = 0
+        while True:
+            selected = self._arrow_select(
+                title=None,
+                items=[label for label, _ in items],
+                selected=selected,
+                header_renderer=self._render_main_header,
+                allow_back=False,
+            )
+            if selected is None or items[selected][1] is None:
+                return
+            try:
+                items[selected][1]()
+            except BackSignal:
+                continue
 
-                if key == KEY_CTRL_C or key == "q":
-                    stop_requested = True
-                    break
-                if not key:
-                    continue
+    def _render_main_header(self) -> None:
+        """Banner + compact status panel at top of the main menu."""
+        self._print_banner()
 
-                # Exit Live before running a screen that uses the full console
-                if key in ("l", "d", "m", "r", "s"):
-                    live.stop()
-                    try:
-                        if key == "l":
-                            self._logs_viewer()
-                        elif key == "d":
-                            self._open_dashboard()
-                        elif key == "m":
-                            self._manage_menu()
-                        elif key == "r":
-                            self._restart_agent()
-                        elif key == "s":
-                            self._show_status()
-                    except BackSignal:
-                        pass
-                    live.start()
-                    live.update(self._render_tower())
-
-    def _render_tower(self):
         cfg = self._safe_load_config()
         runner = self.runner
         status = runner.status() if runner else "stopped"
         err = runner.error() if runner else None
         uptime = runner.uptime() if runner else 0
 
-        # Header
-        banner = Text(BANNER, style="bold cyan")
-
-        # Status line
         status_colors = {
             "running": "green",
             "starting": "yellow",
@@ -279,29 +264,8 @@ class AutonomaTUI:
                 "Dashboard",
                 f"[cyan]http://{cfg.gateway.host}:{cfg.gateway.http_port}[/]",
             )
-
-        # Log tail
-        lines = self.log_ring.tail(12) if self.log_ring else []
-        log_body = (
-            "\n".join(lines) if lines else "[dim](no log entries yet)[/]"
-        )
-
-        # Hotkey bar
-        hotkeys = Text()
-        hotkeys.append(" [L] ", style="bold cyan"); hotkeys.append("Logs   ")
-        hotkeys.append(" [D] ", style="bold cyan"); hotkeys.append("Dashboard   ")
-        hotkeys.append(" [M] ", style="bold cyan"); hotkeys.append("Manage   ")
-        hotkeys.append(" [S] ", style="bold cyan"); hotkeys.append("Status   ")
-        hotkeys.append(" [R] ", style="bold cyan"); hotkeys.append("Restart   ")
-        hotkeys.append(" [Q] ", style="bold cyan"); hotkeys.append("Quit")
-
-        return Group(
-            Align.center(banner),
-            Align.center(Text("AI Agent Platform · control tower", style="dim")),
-            Panel(info, border_style=status_color, title="Autonoma"),
-            Panel(log_body, border_style="dim", title="Live logs (last 12)", height=16),
-            Align.center(hotkeys),
-        )
+        self.console.print(Panel(info, border_style=status_color, title="Autonoma"))
+        self.console.print()
 
     # ----- [L] Logs viewer -----
 
