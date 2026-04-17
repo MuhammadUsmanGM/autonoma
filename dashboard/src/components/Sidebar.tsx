@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings } from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { Page } from '../types'
 
@@ -53,6 +53,32 @@ export default function Sidebar({ current, onChange }: Props) {
             </button>
           )
         })}
+
+        {/* Divider */}
+        <div className="!my-4 mx-2 border-t border-[var(--border)]" />
+
+        {/* Settings (separate from data pages) */}
+        {(() => {
+          const active = current === 'settings'
+          return (
+            <button
+              onClick={() => onChange('settings')}
+              className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
+                active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
+              }`}
+            >
+              {active && (
+                <motion.div
+                  layoutId="active-nav"
+                  className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                />
+              )}
+              <Settings size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+              <span className="relative z-10">Settings</span>
+            </button>
+          )
+        })()}
       </nav>
 
       {/* Footer */}

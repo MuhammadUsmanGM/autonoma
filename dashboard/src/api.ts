@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig } from './types'
 
 const BASE = '/api'
 
@@ -54,4 +54,13 @@ export const api = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json() as Promise<{ response: string; session_id: string }>
   },
+
+  getConfig: () => request<AppConfig>('/config'),
+
+  updateConfig: (data: Record<string, unknown>) =>
+    request<{ status: string; updated: string[]; restart_required: boolean }>('/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
 }

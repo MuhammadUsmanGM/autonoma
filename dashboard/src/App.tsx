@@ -7,6 +7,7 @@ import Chat from './pages/Chat'
 import Memory from './pages/Memory'
 import Sessions from './pages/Sessions'
 import Traces from './pages/Traces'
+import Settings from './pages/Settings'
 import type { Page } from './types'
 
 function App() {
@@ -87,6 +88,7 @@ function App() {
             {page === 'memory' && <Memory />}
             {page === 'sessions' && <Sessions />}
             {page === 'traces' && <Traces />}
+            {page === 'settings' && <Settings />}
           </motion.div>
         </AnimatePresence>
       </main>

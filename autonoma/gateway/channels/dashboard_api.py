@@ -313,7 +313,118 @@ def register_dashboard_routes(
         except Exception as e:
             return 500, headers, json.dumps({"error": str(e)})
 
+    # --- Config endpoints ---
+
+    async def handle_config_get(request: dict) -> tuple[int, dict[str, str], str]:
+        """GET /api/config — return current configuration (secrets masked)."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.config import load_config as _load_config
+            cfg = _load_config()
+            data = {
+                "name": cfg.name,
+                "llm": {
+                    "provider": cfg.llm.provider,
+                    "model": cfg.llm.model,
+                    "api_key_configured": bool(cfg.llm.api_key),
+                },
+                "gateway": {
+                    "host": cfg.gateway.host,
+                    "port": cfg.gateway.port,
+                    "http_port": cfg.gateway.http_port,
+                },
+                "channels": {
+                    "telegram": {"enabled": cfg.channels.telegram.enabled},
+                    "discord": {"enabled": cfg.channels.discord.enabled},
+                    "whatsapp": {"enabled": cfg.channels.whatsapp.enabled},
+                    "gmail": {"enabled": cfg.channels.gmail.enabled},
+                    "rest": {"enabled": cfg.channels.rest.enabled},
+                },
+                "memory": {
+                    "max_context_memories": cfg.memory.max_context_memories,
+                    "decay_interval": cfg.memory.decay_interval,
+                    "importance_threshold": cfg.memory.importance_threshold,
+                    "consolidation_enabled": cfg.memory.consolidation_enabled,
+                },
+                "log_level": cfg.log_level,
+            }
+            return 200, headers, json.dumps(data)
+        except Exception as e:
+            logger.error("Dashboard GET /api/config error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_config_update(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/config — update configuration fields.
+
+        Accepts a JSON body with any subset of config fields. Writes changes
+        to both autonoma.yaml and .env as appropriate. Requires agent restart
+        to take effect.
+        """
+        headers = {"Content-Type": "application/json"}
+        try:
+            import os
+            from pathlib import Path
+            from dotenv import set_key
+            from autonoma.config import save_yaml_config
+
+            data = request.get("json", {})
+            if not data:
+                return 400, headers, json.dumps({"error": "Empty request body"})
+
+            yaml_updates: dict = {}
+            env_path = Path(".env")
+            env_path.touch(exist_ok=True)
+
+            # LLM settings
+            if "llm" in data:
+                llm = data["llm"]
+                if "provider" in llm:
+                    yaml_updates.setdefault("llm", {})["provider"] = llm["provider"]
+                    os.environ["AUTONOMA_LLM_PROVIDER"] = llm["provider"]
+                    set_key(str(env_path), "AUTONOMA_LLM_PROVIDER", llm["provider"], quote_mode="always")
+                if "model" in llm:
+                    yaml_updates.setdefault("llm", {})["model"] = llm["model"]
+                    os.environ["AUTONOMA_LLM_MODEL"] = llm["model"]
+                    set_key(str(env_path), "AUTONOMA_LLM_MODEL", llm["model"], quote_mode="always")
+                if "api_key" in llm and llm["api_key"]:
+                    provider = llm.get("provider", os.getenv("AUTONOMA_LLM_PROVIDER", "openrouter"))
+                    env_key = "OPENROUTER_API_KEY" if provider == "openrouter" else "ANTHROPIC_API_KEY"
+                    os.environ[env_key] = llm["api_key"]
+                    set_key(str(env_path), env_key, llm["api_key"], quote_mode="always")
+
+            # Channel toggles
+            if "channels" in data:
+                for ch_name, ch_data in data["channels"].items():
+                    if isinstance(ch_data, dict) and "enabled" in ch_data:
+                        yaml_updates.setdefault("channels", {}).setdefault(ch_name, {})["enabled"] = ch_data["enabled"]
+
+            # Log level
+            if "log_level" in data:
+                yaml_updates["log_level"] = data["log_level"]
+                os.environ["AUTONOMA_LOG_LEVEL"] = data["log_level"]
+                set_key(str(env_path), "AUTONOMA_LOG_LEVEL", data["log_level"], quote_mode="always")
+
+            # Name
+            if "name" in data:
+                yaml_updates["name"] = data["name"]
+
+            # Memory settings
+            if "memory" in data:
+                for k, v in data["memory"].items():
+                    yaml_updates.setdefault("memory", {})[k] = v
+
+            if yaml_updates:
+                yaml_path = Path("autonoma.yaml")
+                save_yaml_config(yaml_path, yaml_updates)
+
+            return 200, headers, json.dumps({"status": "ok", "updated": list(data.keys()), "restart_required": True})
+        except Exception as e:
+            logger.error("Dashboard POST /api/config error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
     # Register routes
+    http_server.add_route("GET", "/api/config", handle_config_get)
+    http_server.add_route("POST", "/api/config", handle_config_update)
     http_server.add_route("GET", "/api/skills/manifest", handle_manifest)
     http_server.add_route("GET", "/api/memories/stale", handle_stale_memories)
     http_server.add_route("POST", "/api/memories/review", handle_review_memory)
@@ -329,7 +440,7 @@ def register_dashboard_routes(
     http_server.add_route("GET", "/api/tasks/stats", handle_task_stats)
     http_server.add_route("DELETE", "/api/tasks", handle_task_cancel)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 14)
+    logger.info("Dashboard API routes registered (%d endpoints)", 16)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

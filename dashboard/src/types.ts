@@ -98,4 +98,32 @@ export interface TaskStats {
   cancelled: number
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces'
+export interface AppConfig {
+  name: string
+  llm: {
+    provider: string
+    model: string
+    api_key_configured: boolean
+  }
+  gateway: {
+    host: string
+    port: number
+    http_port: number
+  }
+  channels: {
+    telegram: { enabled: boolean }
+    discord: { enabled: boolean }
+    whatsapp: { enabled: boolean }
+    gmail: { enabled: boolean }
+    rest: { enabled: boolean }
+  }
+  memory: {
+    max_context_memories: number
+    decay_interval: number
+    importance_threshold: number
+    consolidation_enabled: boolean
+  }
+  log_level: string
+}
+
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'settings'
