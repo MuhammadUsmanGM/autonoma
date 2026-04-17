@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Save, RefreshCw, Shield, Cpu, Radio, HardDrive, Eye, EyeOff, AlertTriangle, CheckCircle2, ChevronDown } from 'lucide-react'
+import { Save, RefreshCw, Shield, Cpu, Radio, HardDrive, Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { api } from '../api'
 import Skeleton from '../components/Skeleton'
+import Dropdown from '../components/Dropdown'
 import type { AppConfig } from '../types'
 
 const PROVIDERS = [
@@ -246,24 +247,12 @@ export default function Settings() {
           </div>
 
           {/* Model */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Model</label>
-            <div className="relative">
-              <select
-                value={currentModel}
-                onChange={(e) => updateDraft('llm.model', e.target.value)}
-                className="w-full appearance-none bg-white/[0.03] border border-[var(--border)] rounded-xl px-4 py-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]/40 transition-colors cursor-pointer"
-              >
-                {models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-                {!models.includes(currentModel) && (
-                  <option value={currentModel}>{currentModel}</option>
-                )}
-              </select>
-              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-            </div>
-          </div>
+          <Dropdown 
+            label="Model"
+            value={currentModel}
+            options={[...models, ...(models.includes(currentModel) ? [] : [currentModel])]}
+            onChange={(val) => updateDraft('llm.model', val)}
+          />
 
           {/* API Key */}
           <div className="space-y-2">
@@ -377,21 +366,12 @@ export default function Settings() {
           </div>
 
           {/* Log Level */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Log Level</label>
-            <div className="relative">
-              <select
-                value={getVal('log_level', 'info')}
-                onChange={(e) => updateDraft('log_level', e.target.value)}
-                className="w-full appearance-none bg-white/[0.03] border border-[var(--border)] rounded-xl px-4 py-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]/40 transition-colors cursor-pointer"
-              >
-                {LOG_LEVELS.map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-            </div>
-          </div>
+          <Dropdown 
+            label="Log Level"
+            value={getVal('log_level', 'info')}
+            options={LOG_LEVELS}
+            onChange={(val) => updateDraft('log_level', val)}
+          />
 
           {/* Context Window */}
           <div className="space-y-2">
