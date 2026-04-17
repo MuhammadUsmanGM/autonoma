@@ -103,27 +103,34 @@ def read_key(timeout: float | None = None) -> str:
     if os.name == "nt":
         import msvcrt
 
-        def _peek(ms: int = 50) -> bool:
-            """Wait up to `ms` for more input. Returns True if available."""
+        def _getch_timeout(ms: int) -> bytes | None:
+            """Wait up to `ms` for a key stroke."""
             end = time.time() + ms / 1000.0
             while not msvcrt.kbhit():
                 if time.time() >= end:
-                    return False
-                time.sleep(0.002)
-            return True
+                    return None
+                time.sleep(0.005)
+            return msvcrt.getch()
 
+        # Initial wait if timeout given
         if timeout is not None:
             deadline = time.time() + timeout
             while not msvcrt.kbhit():
                 if time.time() >= deadline:
                     return ""
-                time.sleep(0.02)
+                time.sleep(0.01)
+        
         ch = msvcrt.getch()
+        
+        # Ctrl+C
         if ch == b"\x03":
             return KEY_CTRL_C
+        
+        # Enter
         if ch in (b"\r", b"\n"):
             return KEY_ENTER
-        # Old-style extended key: scan-code pair (legacy conhost / no VT)
+
+        # Extended keys (Arrows, Home, End, etc.)
         if ch in (b"\x00", b"\xe0"):
             ch2 = msvcrt.getch()
             return {
@@ -132,33 +139,35 @@ def read_key(timeout: float | None = None) -> str:
                 b"I": KEY_PGUP, b"Q": KEY_PGDN,
                 b"G": KEY_HOME, b"O": KEY_END,
             }.get(ch2, "")
-        # VT escape sequence (Windows Terminal / VT input mode)
+
+        # VT Escape sequences (Modern Windows Terminal)
         if ch == b"\x1b":
-            if not _peek(50):
-                return KEY_ESC  # standalone ESC
-            ch2 = msvcrt.getch()
-            if ch2 != b"[":
+            # Peek for '['
+            next_ch = _getch_timeout(40)
+            if next_ch != b"[":
                 return KEY_ESC
-            if not _peek(50):
+            
+            # Peek for the command char
+            cmd = _getch_timeout(40)
+            if not cmd:
                 return KEY_ESC
-            ch3 = msvcrt.getch()
+                
             arrows = {
                 b"A": KEY_UP, b"B": KEY_DOWN,
                 b"C": KEY_RIGHT, b"D": KEY_LEFT,
                 b"H": KEY_HOME, b"F": KEY_END,
             }
-            if ch3 in arrows:
-                return arrows[ch3]
-            # PgUp/PgDn: ESC [ 5 ~ / ESC [ 6 ~
-            if ch3 == b"5":
-                if _peek(50):
-                    msvcrt.getch()
-                return KEY_PGUP
-            if ch3 == b"6":
-                if _peek(50):
-                    msvcrt.getch()
-                return KEY_PGDN
+            if cmd in arrows:
+                return arrows[cmd]
+            
+            # Multi-char VT (like PgUp/PgDn: 5~ / 6~)
+            if cmd in (b"5", b"6"):
+                # Consume the trailing '~' if it arrives quickly
+                _getch_timeout(20)
+                return KEY_PGUP if cmd == b"5" else KEY_PGDN
+            
             return KEY_ESC
+
         try:
             return ch.decode("utf-8", errors="ignore").lower()
         except Exception:
@@ -836,46 +845,64 @@ class AutonomaTUI:
     ) -> int | None:
         if not items:
             return None
-        # Clamp into range. Accepts negative indices (Python-style from the
-        # end) for completeness and guards against any caller passing a
-        # stale index after items were filtered down.
+        
+        # Initial cleanup
         if selected < 0:
             selected = max(0, len(items) + selected)
         if selected >= len(items):
             selected = 0
-        while True:
-            self.console.clear()
+
+        def render():
+            content = []
             if header_renderer:
-                header_renderer()
+                # Capture header output into a Group
+                # Note: header_renderer usually prints directly.
+                # To make this proper for Live, we should have it return a renderable.
+                # For now, we'll just let it print BEFORE the Live block or clear inside.
+                pass
+            
             if title:
-                self.console.print(Rule(title, style="cyan"))
-                self.console.print()
+                content.append(Rule(title, style="cyan"))
+                content.append("")
+            
             for i, label in enumerate(items):
                 if i == selected:
-                    self.console.print(f"  [bold cyan]▶ {label}[/]")
+                    content.append(Text.assemble(("  ▶ ", "bold cyan"), (label, "bold cyan")))
                 else:
-                    self.console.print(f"    [dim]{label}[/]")
-            self.console.print()
-            hint = "[dim]↑/↓ navigate · Enter select"
+                    content.append(Text(f"    {label}", style="dim"))
+            
+            content.append("")
+            hint = "↑/↓ navigate · Enter select"
             if allow_back:
                 hint += " · ESC back"
-            hint += " · Ctrl+C quit[/]"
-            self.console.print(hint)
+            hint += " · Ctrl+C quit"
+            content.append(Text(hint, style="dim"))
+            
+            return Group(*content)
 
-            key = read_key()
-            if key == KEY_CTRL_C:
-                raise KeyboardInterrupt
-            if key == KEY_ESC and allow_back:
-                return None
-            if key == KEY_UP:
-                selected = (selected - 1) % len(items)
-            elif key == KEY_DOWN:
-                selected = (selected + 1) % len(items)
-            elif key == KEY_ENTER:
-                return selected
+        # Clear once at entry
+        self.console.clear()
+        if header_renderer:
+            header_renderer()
+
+        with Live(render(), console=self.console, refresh_per_second=10) as live:
+            while True:
+                key = read_key()
+                if key == KEY_CTRL_C:
+                    raise KeyboardInterrupt
+                if key == KEY_ESC and allow_back:
+                    return None
+                if key == KEY_UP:
+                    selected = (selected - 1) % len(items)
+                elif key == KEY_DOWN:
+                    selected = (selected + 1) % len(items)
+                elif key == KEY_ENTER:
+                    return selected
+                
+                # Update the live display
+                live.update(render())
 
     def _print_banner(self) -> None:
-        self.console.clear()
         self.console.print(Align.center(Text(BANNER, style="bold cyan")))
         self.console.print(
             Align.center(Text("AI Agent Platform · control panel", style="dim"))
