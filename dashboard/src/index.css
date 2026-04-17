@@ -1,46 +1,72 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0a0a0b;
-  --bg-sidebar: #111113;
-  --bg-card: #18181b;
-  --border: #27272a;
+  --bg: #030303;
+  --bg-sidebar: #09090b;
+  --bg-card: #0f0f12;
+  --bg-card-hover: #16161a;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-bright: rgba(255, 255, 255, 0.15);
   --accent: #f59e0b;
-  --accent-glow: rgba(245, 158, 11, 0.3);
-  --accent-dim: rgba(245, 158, 11, 0.15);
-  --text: #fafafa;
-  --text-muted: #a1a1aa;
-  --success: #22c55e;
+  --accent-glow: rgba(245, 158, 11, 0.4);
+  --accent-dim: rgba(245, 158, 11, 0.08);
+  --text: #ffffff;
+  --text-muted: #8e8e93;
+  --success: #10b981;
   --error: #ef4444;
+  
+  /* Premium Shadow */
+  --shadow-premium: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Glassmorphism */
+.glass {
+  background: rgba(15, 15, 18, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+}
+
+.glass-accent {
+  background: rgba(245, 158, 11, 0.05);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--accent-dim);
+}
+
+/* Glow effects */
+.glow {
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+.glow-sm {
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* Transitions */
+.transition-premium {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 ::-webkit-scrollbar-track {
   background: var(--bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+  background: var(--border-bright);
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
-}
-
-/* Glow effect utility */
-.glow {
-  box-shadow: 0 0 15px var(--accent-glow), 0 0 30px rgba(245, 158, 11, 0.1);
-}
-.glow-sm {
-  box-shadow: 0 0 8px var(--accent-glow);
 }

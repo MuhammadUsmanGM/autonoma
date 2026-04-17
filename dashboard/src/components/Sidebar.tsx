@@ -1,4 +1,5 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Bot, Zap } from 'lucide-react'
+import { motion } from 'framer-motion'
 import type { Page } from '../types'
 
 const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] = [
@@ -16,41 +17,57 @@ interface Props {
 
 export default function Sidebar({ current, onChange }: Props) {
   return (
-    <aside className="w-56 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0">
-      {/* Logo */}
-      <div className="px-5 py-6 border-b border-[var(--border)]">
-        <h1 className="text-lg font-semibold tracking-tight">
-          <span className="text-[var(--accent)]">Autonoma</span>
-        </h1>
-        <p className="text-xs text-[var(--text-muted)] mt-0.5">Agent Dashboard</p>
+    <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0 z-20">
+      {/* Brand */}
+      <div className="px-6 py-8 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-[var(--accent)] flex items-center justify-center glow-sm">
+          <Bot size={20} className="text-black" />
+        </div>
+        <div>
+          <h1 className="text-sm font-bold tracking-tight uppercase text-white">
+            Autonoma
+          </h1>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <Zap size={10} className="text-[var(--accent)]" />
+            <span className="text-[10px] text-[var(--accent)] font-medium uppercase tracking-wider">Premium FTE</span>
+          </div>
+        </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      {/* Navigation */}
+      <nav className="flex-1 px-4 space-y-1.5">
         {NAV_ITEMS.map(({ page, label, icon: Icon }) => {
           const active = current === page
           return (
             <button
               key={page}
               onClick={() => onChange(page)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-                active
-                  ? 'bg-[var(--accent-dim)] text-[var(--accent)] glow-sm'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-white/5'
+              className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
+                active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
               }`}
             >
-              <Icon size={18} />
-              {label}
+              {active && (
+                <motion.div
+                  layoutId="active-nav"
+                  className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                />
+              )}
+              <Icon size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+              <span className="relative z-10">{label}</span>
             </button>
           )
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-[var(--border)]">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
-          <span className="text-xs text-[var(--text-muted)]">System Online</span>
+      {/* System Status */}
+      <div className="p-4">
+        <div className="px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)]" />
+            <span className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Live</span>
+          </div>
+          <span className="text-[10px] text-white/40 font-mono">v0.1.0</span>
         </div>
       </div>
     </aside>

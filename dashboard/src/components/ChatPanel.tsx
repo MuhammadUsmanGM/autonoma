@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Loader2 } from 'lucide-react'
+import { Send, Loader2, User, Bot, Sparkles } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../api'
 import type { ChatMessage } from '../types'
 
@@ -39,7 +40,7 @@ export default function ChatPanel() {
     } catch {
       const errMsg: ChatMessage = {
         role: 'assistant',
-        content: 'Failed to get response. Is Autonoma running?',
+        content: 'Failed to connect to the neural gateway. Is Autonoma active?',
         timestamp: new Date().toISOString(),
       }
       setMessages((prev) => [...prev, errMsg])
@@ -49,59 +50,105 @@ export default function ChatPanel() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-140px)]">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-[var(--text-muted)] text-sm">
-              Send a message to start chatting with Autonoma
-            </p>
-          </div>
-        )}
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                msg.role === 'user'
-                  ? 'bg-[var(--accent)] text-black rounded-br-md'
-                  : 'bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text)] rounded-bl-md'
-              }`}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+        <AnimatePresence initial={false}>
+          {messages.length === 0 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center justify-center h-full text-center space-y-4"
             >
-              <p className="whitespace-pre-wrap">{msg.content}</p>
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="px-4 py-2.5 rounded-2xl rounded-bl-md bg-[var(--bg-card)] border border-[var(--border)]">
-              <Loader2 size={16} className="animate-spin text-[var(--accent)]" />
-            </div>
-          </div>
-        )}
+              <div className="w-16 h-16 rounded-3xl bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center glow-sm">
+                <Sparkles className="text-[var(--accent)]" size={32} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white tracking-tight">Direct Neural Link</h3>
+                <p className="text-sm text-[var(--text-muted)] mt-1 max-w-[200px]">
+                  Send a transmission to initiate the handshake.
+                </p>
+              </div>
+            </motion.div>
+          )}
+          {messages.map((msg, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className={`flex items-start gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                msg.role === 'user' 
+                  ? 'bg-white/5 border-white/10' 
+                  : 'bg-[var(--accent-dim)] border-[var(--accent)]/20'
+              }`}>
+                {msg.role === 'user' ? <User size={14} className="text-white/60" /> : <Bot size={14} className="text-[var(--accent)]" />}
+              </div>
+              <div
+                className={`max-w-[80%] px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed relative ${
+                  msg.role === 'user'
+                    ? 'bg-white/[0.04] text-white border border-white/10 rounded-tr-none'
+                    : 'bg-[var(--bg-card)] border border-[var(--border)] text-white/90 rounded-tl-none ring-1 ring-white/5'
+                }`}
+              >
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)] mt-2 block opacity-40">
+                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </motion.div>
+          ))}
+          {loading && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex justify-start gap-4"
+            >
+              <div className="w-8 h-8 rounded-lg bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center">
+                <Bot size={14} className="text-[var(--accent)]" />
+              </div>
+              <div className="px-5 py-4 rounded-2xl rounded-tl-none bg-[var(--bg-card)] border border-[var(--border)] ring-1 ring-white/5 flex items-center gap-2">
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.5 }}
+                  className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"
+                />
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.5, delay: 0.2 }}
+                  className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"
+                />
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.5, delay: 0.4 }}
+                  className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div className="border-t border-[var(--border)] p-4">
-        <div className="flex gap-2">
+      <div className="p-6 pt-2 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
+        <div className="glass px-2 py-2 rounded-2xl flex gap-2 items-center focus-within:border-[var(--accent)]/40 transition-premium shadow-2xl">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()}
-            placeholder="Type a message..."
-            className="flex-1 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)] transition-colors"
+            placeholder="Transmit command to Autonoma..."
+            className="flex-1 bg-transparent border-none rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 outline-none"
           />
           <button
             onClick={send}
             disabled={loading || !input.trim()}
-            className="px-4 py-2.5 rounded-xl bg-[var(--accent)] text-black font-medium text-sm hover:brightness-110 disabled:opacity-40 transition-all cursor-pointer"
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-[var(--accent)] text-black hover:scale-105 active:scale-95 disabled:opacity-20 disabled:grayscale transition-all cursor-pointer shadow-lg shadow-[var(--accent-glow)]"
           >
-            <Send size={16} />
+            {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         </div>
       </div>
