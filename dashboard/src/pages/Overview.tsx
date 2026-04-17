@@ -83,7 +83,7 @@ export default function Overview() {
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="lg:col-span-2 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8"
+          className="lg:col-span-2 rounded-2xl reflective p-8"
         >
           <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-6 flex items-center gap-2">
             <Radio size={16} className="text-[var(--accent)]" />
@@ -113,7 +113,7 @@ export default function Overview() {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
-          className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8 flex flex-col"
+          className="rounded-2xl reflective p-8 flex flex-col"
         >
           <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-6 flex items-center gap-2">
             <Brain size={16} className="text-[var(--accent)]" />

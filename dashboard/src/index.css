@@ -57,6 +57,30 @@ body::before {
   filter: contrast(120%) brightness(100%);
 }
 
+/* Premium Utilities */
+.reflective {
+  position: relative;
+  background: linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
+              linear-gradient(135deg, 
+                transparent, 
+                var(--border-bright) 20%, 
+                var(--accent) 50%, 
+                var(--border-bright) 80%, 
+                transparent
+              ) border-box;
+  border: 1px solid transparent;
+}
+
+.reflective:hover {
+  background: linear-gradient(var(--bg-card-hover), var(--bg-card-hover)) padding-box,
+              linear-gradient(135deg, 
+                rgba(255,255,255,0.05), 
+                var(--accent) 40%, 
+                var(--accent) 60%, 
+                rgba(255,255,255,0.05)
+              ) border-box;
+}
+
 /* Glassmorphism */
 .glass {
   background: rgba(15, 15, 18, 0.7);

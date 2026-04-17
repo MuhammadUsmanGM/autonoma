@@ -12,7 +12,7 @@ export default function StatsCard({ label, value, icon: Icon, accent }: Props) {
   return (
     <motion.div
       whileHover={{ y: -4, scale: 1.01 }}
-      className={`relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 transition-premium ${accent ? 'glow-sm' : ''}`}
+      className={`relative overflow-hidden rounded-2xl reflective p-6 transition-premium ${accent ? 'glow-sm' : ''}`}
     >
       {accent && (
         <div className="absolute top-0 right-0 w-24 h-24 bg-[var(--accent)] opacity-[0.03] blur-3xl -mr-8 -mt-8" />
