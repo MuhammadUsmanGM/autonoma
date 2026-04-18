@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import getpass
 import os
 import re
@@ -96,6 +97,38 @@ KEY_PGDN = "PGDN"
 KEY_HOME = "HOME"
 KEY_END = "END"
 
+# Termios guard state (POSIX only). Populated the first time read_key flips
+# stdin into raw mode so an atexit handler can restore it on any exit path
+# that bypasses our try/finally (SIGTERM, os._exit, unhandled C-level crash).
+_TERMIOS_GUARD_INSTALLED = False
+_TERMIOS_GUARD_FD: int | None = None
+_TERMIOS_GUARD_OLD = None
+
+
+def _install_termios_guard(fd: int, old) -> None:
+    """Register a one-shot atexit restore of stdin termios. Safe to call many
+    times — only the first call registers the handler, and it uses the very
+    first `old` attrs it sees (i.e. the true pre-raw state)."""
+    global _TERMIOS_GUARD_INSTALLED, _TERMIOS_GUARD_FD, _TERMIOS_GUARD_OLD
+    if _TERMIOS_GUARD_INSTALLED:
+        return
+    _TERMIOS_GUARD_FD = fd
+    _TERMIOS_GUARD_OLD = old
+
+    def _restore():
+        try:
+            import termios
+            if _TERMIOS_GUARD_FD is not None and _TERMIOS_GUARD_OLD is not None:
+                termios.tcsetattr(
+                    _TERMIOS_GUARD_FD, termios.TCSADRAIN, _TERMIOS_GUARD_OLD
+                )
+        except Exception:
+            # atexit must never raise; a dead fd or missing termios is fine.
+            pass
+
+    atexit.register(_restore)
+    _TERMIOS_GUARD_INSTALLED = True
+
 
 def read_key(timeout: float | None = None) -> str:
     """Read a keypress. Returns key code or raw char. timeout=None blocks."""
@@ -168,6 +201,10 @@ def read_key(timeout: float | None = None) -> str:
         import tty
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
+        # Register an atexit restore the FIRST time we flip to raw mode, so a
+        # SIGTERM / os._exit / uncaught crash can't leave the user's terminal
+        # stuck in raw mode after the process dies. Idempotent.
+        _install_termios_guard(fd, old)
         try:
             tty.setraw(fd)
             if timeout is not None:
@@ -246,6 +283,10 @@ class AutonomaTUI:
         # .env load cache: keyed by mtime. Avoids hitting disk 5× per
         # channel-menu frame when rendering the credentials column.
         self._env_loaded_mtime: float | None = None
+        # Tracks whether run() made it past setup and into the main loop. Used
+        # to decide whether _shutdown should print "Goodbye." — if the user
+        # Ctrl+C's out of the forced first-run wizard, we want a quiet exit.
+        self._entered_main_loop: bool = False
 
     # ----- Entry point -----
 
@@ -274,6 +315,7 @@ class AutonomaTUI:
             self.runner.start()
 
             # Enter the control tower
+            self._entered_main_loop = True
             self._control_tower()
         except KeyboardInterrupt:
             pass
@@ -285,7 +327,11 @@ class AutonomaTUI:
             self.console.clear()
             self.console.print("[yellow]Stopping agent…[/]")
             self.runner.stop()
-        self.console.print("[dim]Goodbye.[/]\n")
+        # Only greet the user goodbye if they actually made it into the app.
+        # Aborting the forced first-run wizard should exit silently — there's
+        # nothing to say goodbye to.
+        if self._entered_main_loop:
+            self.console.print("[dim]Goodbye.[/]\n")
 
     # ----- Main menu -----
 
@@ -386,20 +432,27 @@ class AutonomaTUI:
                     break
                 if key == KEY_CTRL_C:
                     raise KeyboardInterrupt
+
+                # Compute scrollback ceiling now so UP/PGUP/HOME can't drift
+                # past the oldest log line. body_height mirrors _render_logs.
+                total = len(self.log_ring.all()) if self.log_ring else 0
+                body_height = max(5, self.console.size.height - 4)
+                max_scroll = max(0, total - body_height)
+
                 if key == KEY_UP:
-                    scroll += 1; follow = False
+                    scroll = min(max_scroll, scroll + 1); follow = False
                 elif key == KEY_DOWN:
                     scroll = max(0, scroll - 1)
                     if scroll == 0:
                         follow = True
                 elif key == KEY_PGUP:
-                    scroll += 20; follow = False
+                    scroll = min(max_scroll, scroll + 20); follow = False
                 elif key == KEY_PGDN:
                     scroll = max(0, scroll - 20)
                     if scroll == 0:
                         follow = True
                 elif key == KEY_HOME:
-                    scroll = 10_000_000; follow = False
+                    scroll = max_scroll; follow = False
                 elif key == KEY_END:
                     scroll = 0; follow = True
                 elif key == "c":
@@ -1057,13 +1110,39 @@ class AutonomaTUI:
     def _set_env(self, key: str, value: str) -> None:
         self.env_path.parent.mkdir(parents=True, exist_ok=True)
         self.env_path.touch(exist_ok=True)
-        self._enable_env(key)
+        # Drop any commented-out versions of this key before writing — uncommenting
+        # them would momentarily push a stale value into os.environ (and, if an
+        # active line also exists, create a duplicate that set_key wouldn't
+        # clean up). Stripping first means set_key always writes exactly one
+        # active assignment with the new value.
+        self._strip_commented_env(key)
         # quote_mode="always" — unquoted values with spaces break `source .env`
         # in bash, and values containing '#' get parsed as comments by dotenv
         # itself. Always quoting preserves credentials with #, $, ", spaces, etc.
         set_key(str(self.env_path), key, value, quote_mode="always")
         os.environ[key] = value
         self._invalidate_config_cache()
+
+    def _strip_commented_env(self, key: str) -> bool:
+        """Remove all `# KEY=...` (and `# export KEY=...`) lines from .env.
+        Active lines are left untouched. Returns True if any lines were dropped."""
+        if not self.env_path.exists():
+            return False
+        lines = self.env_path.read_text(encoding="utf-8").splitlines()
+        pattern = self._env_line_pattern(key)
+        new_lines = []
+        changed = False
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                body = stripped.lstrip("#").lstrip()
+                if pattern.match(body):
+                    changed = True
+                    continue  # drop this commented duplicate
+            new_lines.append(line)
+        if changed:
+            self.env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        return changed
 
     @staticmethod
     def _env_line_pattern(key: str) -> re.Pattern[str]:
@@ -1124,28 +1203,59 @@ class AutonomaTUI:
         return s
 
     def _enable_env(self, key: str) -> bool:
+        """Activate a commented-out `# KEY=...` line in .env.
+
+        Semantics:
+          - If an active line for `key` already exists, drop every commented
+            duplicate (they'd become stale doubles otherwise) and keep the
+            active line's value.
+          - Otherwise uncomment the FIRST commented match and drop the rest.
+          - No-op if no matching lines exist at all.
+
+        Returns True if the file was modified."""
         if not self.env_path.exists():
             return False
         lines = self.env_path.read_text(encoding="utf-8").splitlines()
         pattern = self._env_line_pattern(key)
+
+        # First pass: is there already an active assignment for this key?
+        has_active = any(
+            pattern.match(line.lstrip())
+            for line in lines
+            if not line.lstrip().startswith("#")
+        )
+
         changed = False
-        new_lines = []
+        new_lines: list[str] = []
+        activated = False  # have we uncommented one yet?
+        new_value_line: str | None = None
+
         for line in lines:
             stripped = line.lstrip()
             if not stripped.startswith("#"):
                 new_lines.append(line)
                 continue
             body = stripped.lstrip("#").lstrip()
-            if pattern.match(body):
-                # Preserve the original body verbatim in the file so the user's
-                # chosen quoting style survives round-trips. os.environ gets the
-                # decoded literal so runtime code sees the true value.
-                new_lines.append(body)
-                changed = True
-                _, _, raw_val = body.partition("=")
-                os.environ[key] = self._unquote_dotenv_value(raw_val)
+            if not pattern.match(body):
+                new_lines.append(line)
                 continue
-            new_lines.append(line)
+            # Matches our key, and is commented.
+            if has_active or activated:
+                # Drop — either an active line already wins, or we already
+                # uncommented the first duplicate.
+                changed = True
+                continue
+            # Uncomment this one. Preserve the original body verbatim so the
+            # user's quoting style survives round-trips.
+            new_lines.append(body)
+            new_value_line = body
+            activated = True
+            changed = True
+
+        if activated and new_value_line is not None:
+            _, _, raw_val = new_value_line.partition("=")
+            os.environ[key] = self._unquote_dotenv_value(raw_val)
+
         if changed:
             self.env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
             self._invalidate_config_cache()
