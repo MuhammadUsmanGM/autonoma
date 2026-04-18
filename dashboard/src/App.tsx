@@ -12,6 +12,7 @@ import Tasks from './pages/Tasks'
 import SoulEditor from './pages/SoulEditor'
 import Channels from './pages/Channels'
 import Logs from './pages/Logs'
+import Webhooks from './pages/Webhooks'
 import { NotificationsProvider } from './contexts/NotificationsContext'
 import AlertsPanel from './components/AlertsPanel'
 import type { Page } from './types'
@@ -98,6 +99,7 @@ function App() {
               {page === 'traces' && <Traces />}
               {page === 'settings' && <Settings />}
               {page === 'tasks' && <Tasks />}
+              {page === 'webhooks' && <Webhooks />}
               {page === 'soul' && <SoulEditor />}
               {page === 'channels' && <Channels />}
               {page === 'logs' && <Logs />}

@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry } from './types'
 
 const BASE = '/api'
 
@@ -112,5 +112,13 @@ export const api = {
     if (params.since) qs.append('since', params.since)
     if (params.q) qs.append('q', params.q)
     return request<LogEntry[]>(`/logs?${qs.toString()}`)
+  },
+
+  getWebhooks: (channel?: string) => {
+    return request<WebhookEntry[]>(channel ? `/webhooks?channel=${encodeURIComponent(channel)}` : '/webhooks')
+  },
+
+  replayWebhook: (id: string) => {
+    return request<{ status: string }>(`/webhooks/${id}/replay`, { method: 'POST' })
   },
 }

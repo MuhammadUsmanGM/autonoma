@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell, Globe, Terminal } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell, Globe, Terminal, Webhook } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useNotifications } from '../contexts/NotificationsContext'
 import type { Page } from '../types'
@@ -9,6 +9,7 @@ const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] =
   { page: 'memory', label: 'Memory', icon: Brain },
   { page: 'sessions', label: 'Sessions', icon: History },
   { page: 'traces', label: 'Traces', icon: Activity },
+  { page: 'webhooks', label: 'Webhooks', icon: Webhook },
   { page: 'tasks', label: 'Tasks', icon: ListTodo },
 ]
 

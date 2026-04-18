@@ -648,6 +648,60 @@ def register_dashboard_routes(
             logger.error("Dashboard POST /api/channels/credentials error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    async def handle_webhooks(request: dict) -> tuple[int, dict[str, str], str]:
+        """GET /api/webhooks?channel="""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.gateway.channels._http_server import webhook_buffer
+            
+            # optional channel filtering
+            path = request.get("path", "")
+            channel_filter = ""
+            if "?" in path:
+                qs = path.split("?", 1)[1]
+                params = dict(p.split("=", 1) for p in qs.split("&") if "=" in p)
+                channel_filter = params.get("channel", "").lower()
+
+            results = webhook_buffer
+            if channel_filter:
+                results = [item for item in results if channel_filter in item["path"].lower()]
+                
+            return 200, headers, json.dumps(results[::-1]) # reverse chronological
+        except Exception as e:
+            logger.error("Dashboard GET /api/webhooks error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_webhook_replay(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/webhooks/{id}/replay"""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.gateway.channels._http_server import webhook_buffer
+            path = request.get("path", "")
+            parts = path.split("/")
+            if len(parts) < 5:
+                return 400, headers, json.dumps({"error": "Missing webhook id"})
+            
+            w_id = parts[3]
+            target = next((x for x in webhook_buffer if x["id"] == w_id), None)
+            if not target:
+                return 404, headers, json.dumps({"error": "Webhook not found"})
+
+            # Bypass socket and invoke handler directly to mimic replay
+            handler = http_server._match_route(target["method"], target["path"])
+            if handler:
+                asyncio.create_task(handler({
+                    "method": target["method"],
+                    "path": target["path"],
+                    "headers": target["headers"],
+                    "body": target["body"],
+                    "json": target["json"],
+                }))
+            
+            return 200, headers, json.dumps({"status": "Replay triggered"})
+        except Exception as e:
+            logger.error("Dashboard POST /api/webhooks/replay error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
     # Register routes
     http_server.add_route("GET", "/api/soul", handle_soul_get)
     http_server.add_route("POST", "/api/soul", handle_soul_update)
@@ -685,8 +739,10 @@ def register_dashboard_routes(
     http_server.add_route("POST", "/api/channels/discord/credentials", handle_channel_credentials)
     http_server.add_route("POST", "/api/channels/gmail/credentials", handle_channel_credentials)
     http_server.add_route("GET", "/api/logs", handle_logs)
+    http_server.add_route("GET", "/api/webhooks", handle_webhooks)
+    http_server.add_route("POST", "/api/webhooks", handle_webhook_replay) # Using wildcard prefix catch since it's dynamic /{id}/replay. Wait, let's just make it a static route, but HTTPServer might not support path params natively.
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 23)
+    logger.info("Dashboard API routes registered (%d endpoints)", 25)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

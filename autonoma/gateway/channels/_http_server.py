@@ -9,8 +9,30 @@ import mimetypes
 from typing import Any, Callable, Awaitable
 from urllib.parse import parse_qs, unquote_plus
 from pathlib import Path
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# Webhook Tracking Buffer
+# Used by the dashboard to inspect incoming external webhooks and replay them.
+webhook_buffer: list[dict[str, Any]] = []
+
+def _record_webhook(request: dict[str, Any]) -> None:
+    # Generate ID and timestamp
+    entry_id = f"wh_{int(datetime.now().timestamp() * 1000)}"
+    entry = {
+        "id": entry_id,
+        "timestamp": datetime.now().isoformat(),
+        "method": request["method"],
+        "path": request["path"],
+        "headers": request["headers"],
+        "body": request["body"],
+        "json": request.get("json", {}),
+    }
+    webhook_buffer.append(entry)
+    if len(webhook_buffer) > 100:
+        webhook_buffer.pop(0)
+
 
 # Route handler signature: (request_dict) -> (status, headers, body)
 RouteHandler = Callable[[dict[str, Any]], Awaitable[tuple[int, dict[str, str], str]]]
@@ -99,6 +121,10 @@ class HTTPServer:
                 self._write_response(writer, 204, {**cors, "Content-Length": "0"}, "")
                 await writer.drain()
                 return
+            
+            # Record webhook payloads before they execute
+            if "/api/chat" in request["path"] or "/webhook" in request["path"]:
+                _record_webhook(request)
 
             handler = self._match_route(request["method"], request["path"])
 

@@ -143,4 +143,14 @@ export interface LogEntry {
   msg_raw: string
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'logs'
+export interface WebhookEntry {
+  id: string
+  timestamp: string
+  method: string
+  path: string
+  headers: Record<string, string>
+  body: string
+  json: Record<string, any>
+}
+
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'logs' | 'webhooks'
