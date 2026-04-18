@@ -7,6 +7,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 from autonoma.config import load_config
 from autonoma.cortex.agent import Agent
@@ -120,9 +121,21 @@ async def run(
     auth = AuthMiddleware()
     server = GatewayServer(config.gateway, gateway_router, auth, http_server=http_server)
 
-    # 14. Register CLI channel (always on)
-    cli_channel = CLIChannel(agent_name=config.name)
-    server.register_channel(cli_channel)
+    # 14. Register CLI channel — ONLY when running headless.
+    #
+    # When the agent is embedded under the TUI (agent_runner is passed in by
+    # AgentRunner._thread_main), the TUI owns stdin in raw mode. Registering
+    # CLIChannel here would start a second reader on sys.stdin via
+    # `input("You > ")`, which races the TUI's read_key() — keystrokes get
+    # stolen, the "You > " prompt repaints under the menu on every render,
+    # and arrow/enter navigation freezes. The TUI provides its own chat UI
+    # (and the web dashboard has /api/chat) so there's nothing to lose by
+    # skipping the CLI channel in embedded mode.
+    if agent_runner is None:
+        cli_channel = CLIChannel(agent_name=config.name)
+        server.register_channel(cli_channel)
+    else:
+        logger.info("Embedded mode — skipping CLI channel (TUI owns stdin).")
 
     # 15. Register optional channels (deferred imports)
     if ch.rest.enabled:
