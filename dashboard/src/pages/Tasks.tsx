@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { ListTodo, RefreshCw, XCircle, Clock, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { ListTodo, RefreshCw, XCircle, Clock, CheckCircle2, AlertTriangle, Loader2, Plus, ChevronRight } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { api } from '../api'
 import Skeleton from '../components/Skeleton'
@@ -139,7 +139,7 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
   )
 }
 
-import { Plus, ChevronRight } from 'lucide-react'
+
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<TaskItem[]>([])

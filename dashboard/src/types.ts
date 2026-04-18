@@ -78,12 +78,13 @@ export interface TaskItem {
   id: string
   name: string
   priority: number
-  payload: Record<string, unknown>
+  skill: string
+  args: Record<string, any>
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   created_at: string
   started_at: string | null
   completed_at: string | null
-  result: string | null
+  result: any | null
   error: string | null
   retries: number
   max_retries: number
