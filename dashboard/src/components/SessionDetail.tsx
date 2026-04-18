@@ -1,8 +1,11 @@
+import { Download, Trash2 } from 'lucide-react'
 import type { SessionMessage } from '../types'
 
 interface Props {
   sessionId: string
   messages?: SessionMessage[]
+  onExport: () => void
+  onDelete: () => void
 }
 
 function formatTime(iso: string): string {
@@ -11,13 +14,30 @@ function formatTime(iso: string): string {
     minute: '2-digit',
   })
 }
-
-export default function SessionDetail({ sessionId, messages = [] }: Props) {
+export default function SessionDetail({ sessionId, messages = [], onExport, onDelete }: Props) {
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="px-6 py-4 border-b border-[var(--border)] shrink-0 bg-white/[0.01]">
-        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Active Resonance Link</span>
-        <p className="text-xs text-white font-mono mt-1 opacity-40 truncate">{sessionId}</p>
+      <div className="px-6 py-4 border-b border-[var(--border)] shrink-0 bg-white/[0.01] flex items-center justify-between">
+        <div>
+          <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Active Resonance Link</span>
+          <p className="text-xs text-white font-mono mt-1 opacity-40 truncate">{sessionId}</p>
+        </div>
+        <div className="flex items-center gap-2">
+           <button 
+             onClick={onExport}
+             className="p-2 mr-1 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent)] transition-all cursor-pointer"
+             title="Export Thread"
+           >
+             <Download size={16} />
+           </button>
+           <button 
+             onClick={onDelete}
+             className="p-2 rounded-lg hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-all cursor-pointer"
+             title="Delete Session"
+           >
+             <Trash2 size={16} />
+           </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">

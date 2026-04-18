@@ -26,8 +26,28 @@ function formatTime(iso: string): string {
   }
 }
 
-function TraceRow({ trace }: { trace: TraceItem }) {
+function TraceRow({ trace: initialTrace }: { trace: TraceItem }) {
   const [expanded, setExpanded] = useState(false)
+  const [trace, setTrace] = useState(initialTrace)
+  const [loading, setLoading] = useState(false)
+
+  const handleExpand = async () => {
+    if (!expanded) {
+      setExpanded(true)
+      setLoading(true)
+      try {
+        const fullTrace = await api.getTrace(initialTrace.id)
+        setTrace(fullTrace)
+      } catch (e) {
+        console.error('Failed to hydrate trace details:', e)
+      } finally {
+        setLoading(false)
+      }
+    } else {
+      setExpanded(false)
+    }
+  }
+
   const Icon = STATUS_ICONS[trace.status] || Activity
 
   return (
@@ -37,7 +57,7 @@ function TraceRow({ trace }: { trace: TraceItem }) {
       className="reflective rounded-xl overflow-hidden"
     >
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={handleExpand}
         className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-white/[0.03] transition-all cursor-pointer group"
       >
         <motion.div animate={{ rotate: expanded ? 90 : 0 }} transition={{ duration: 0.15 }}>
@@ -82,7 +102,10 @@ function TraceRow({ trace }: { trace: TraceItem }) {
             <div className="px-5 pb-6 border-t border-[var(--border)]">
               {/* Timeline Header */}
               <div className="flex items-center justify-between mt-6 mb-4">
-                  <h4 className="text-[10px] font-bold text-[var(--text)] uppercase tracking-widest">Processing Timeline</h4>
+                  <div className="flex items-center gap-3">
+                    <h4 className="text-[10px] font-bold text-[var(--text)] uppercase tracking-widest">Processing Timeline</h4>
+                    {loading && <RefreshCw size={10} className="animate-spin text-[var(--text-muted)]" />}
+                  </div>
                   <div className="flex items-center gap-4 text-[9px] text-[var(--text-faint)] font-bold uppercase tracking-tighter">
                       <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-[var(--accent)]" /> Active Stage</div>
                       <span>Total: {trace.elapsed_seconds.toFixed(3)}s</span>

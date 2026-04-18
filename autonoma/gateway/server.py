@@ -109,6 +109,13 @@ class GatewayServer:
         except Exception as e:
             self._channel_status[channel.name]["status"] = "error"
             self._channel_status[channel.name]["last_error"] = str(e)
+            from autonoma.alerts import alert_manager
+            alert_manager.add_alert(
+                level="error",
+                title=f"Channel {channel.name.capitalize()} Crashed",
+                message=str(e),
+                channel=channel.name
+            )
             logger.exception("Channel '%s' crashed", channel.name)
 
     async def reconnect_channel(self, name: str) -> None:
@@ -144,18 +151,23 @@ class GatewayServer:
 
         logger.info("WebSocket client connected")
         from autonoma.logs import log_buffer
+        from autonoma.alerts import alert_manager
         
         # Async queue for pushes
         q = asyncio.Queue()
         
-        def _on_log(entry):
-            q.put_nowait(entry)
+        def _on_event(entry):
+            # Check if alert vs log
+            if "title" in entry:
+                q.put_nowait({"type": "alert", "data": entry})
+            else:
+                q.put_nowait({"type": "log", "data": entry})
             
         async def _pusher():
             while True:
-                entry = await q.get()
+                payload = await q.get()
                 try:
-                    await websocket.send(json.dumps({"type": "log", "data": entry}))
+                    await websocket.send(json.dumps(payload))
                 except Exception:
                     break
                     
@@ -169,8 +181,14 @@ class GatewayServer:
                     if action == "subscribe_logs":
                         if pusher_task is None:
                             pusher_task = asyncio.create_task(_pusher())
-                            log_buffer.subscribers.append(_on_log)
+                        if _on_event not in log_buffer.subscribers:
+                            log_buffer.subscribers.append(_on_event)
                         await websocket.send(json.dumps({"status": "ok", "message": "Subscribed to logs"}))
+                    elif action == "subscribe_alerts":
+                        if pusher_task is None:
+                            pusher_task = asyncio.create_task(_pusher())
+                        alert_manager.subscribe(_on_event)
+                        await websocket.send(json.dumps({"status": "ok", "message": "Subscribed to alerts"}))
                     else:
                         await websocket.send(
                             json.dumps({"status": "ok", "message": "Unknown command"})
@@ -179,12 +197,14 @@ class GatewayServer:
                     await websocket.send(
                         json.dumps({"error": "Invalid JSON"})
                     )
-        except websockets.exceptions.ConnectionClosed:
-            logger.info("WebSocket client disconnected")
+        except Exception as e:
+            logger.info("WebSocket client disconnected: %s", e)
         finally:
-            if _on_log in log_buffer.subscribers:
-                log_buffer.subscribers.remove(_on_log)
+            if _on_event in log_buffer.subscribers:
+                log_buffer.subscribers.remove(_on_event)
+            alert_manager.unsubscribe(_on_event)
             if pusher_task:
+                pusher_task.cancel()
                 pusher_task.cancel()
 
     async def wait_for_channels(self) -> None:

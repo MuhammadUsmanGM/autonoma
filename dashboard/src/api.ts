@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest } from './types'
 
 const BASE = '/api'
 
@@ -121,4 +121,30 @@ export const api = {
   replayWebhook: (id: string) => {
     return request<{ status: string }>(`/webhooks/${id}/replay`, { method: 'POST' })
   },
+
+  getAlerts: () => request<Alert[]>('/alerts'),
+  
+  markAlertRead: (id?: string) => 
+    request<{ status: string }>('/alerts/read', { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    }),
+
+  getTask: (id: string) => request<TaskItem>(`/tasks/${id}`),
+
+  createTask: (data: { name: string; skill: string; args: any; priority?: number }) =>
+    request<{ status: string; id: string }>('/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  consolidateMemory: () => request<{ status: string }>('/memories/consolidate', { method: 'POST' }),
+
+  exportMemory: () => request<Memory[]>('/memories/export'),
+
+  deleteSession: (id: string) => request<{ deleted: string }>(`/sessions/${id}`, { method: 'DELETE' }),
+
+  getSkillManifest: () => request<SkillManifest[]>('/skills/manifest'),
 }

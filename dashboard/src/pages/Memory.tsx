@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Search, RefreshCw, Sparkles, Trash2, CheckSquare, X } from 'lucide-react'
+import { Search, RefreshCw, Sparkles, Trash2, CheckSquare, X, Database, Download } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { api } from '../api'
@@ -115,6 +115,31 @@ export default function MemoryPage() {
     }
   }
 
+  const handleConsolidate = async () => {
+    try {
+      await api.consolidateMemory()
+      toast.success('Cognitive consolidation triggered in background')
+    } catch {
+      toast.error('Failed to start consolidation')
+    }
+  }
+
+  const handleExport = async () => {
+    try {
+      const data = await api.exportMemory()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `autonoma-memory-export-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Cognitive backup generated')
+    } catch {
+      toast.error('Export failed')
+    }
+  }
+
   return (
     <div className="p-10 space-y-8 pb-32">
       <header className="flex items-center justify-between">
@@ -123,15 +148,22 @@ export default function MemoryPage() {
           <p className="text-sm text-[var(--text-muted)]">Browse and manage the agent's neural resonance</p>
         </div>
         <div className="flex items-center gap-3">
-          {typeFilter === 'maintenance' && filtered.length > 0 && (
-             <button
-              onClick={() => setSelectedIds(filtered.map(m => m.id))}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--accent-dim)] border border-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent-dim)]/40 transition-colors cursor-pointer"
-            >
-              <CheckSquare size={14} />
-              Select All Stale
-            </button>
-          )}
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+            title="Export Registry"
+          >
+            <Download size={14} />
+            Export
+          </button>
+          <button
+            onClick={handleConsolidate}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+            title="Trigger Consolidation"
+          >
+            <Database size={14} />
+            Consolidate
+          </button>
           <button
             onClick={load}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text)] hover:bg-[var(--overlay)] transition-colors cursor-pointer"

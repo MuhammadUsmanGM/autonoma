@@ -51,6 +51,33 @@ export default function Sessions() {
     }
   }
 
+  const handleDeleteSession = async () => {
+    if (!selected) return
+    if (!confirm('Permanently prune this session log?')) return
+    try {
+      await api.deleteSession(selected)
+      setSessions(prev => prev.filter(s => s.id !== selected))
+      setSelected(null)
+      setMessages([])
+      toast.success('Session registry purged')
+    } catch {
+      toast.error('Purge command failed')
+    }
+  }
+
+  const handleExportSession = () => {
+    if (!selected || messages.length === 0) return
+    const content = messages.map(m => `[${m.timestamp}] ${m.role.toUpperCase()}: ${m.content}`).join('\n\n')
+    const blob = new Blob([content], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `session-${selected}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Resonance history exported')
+  }
+
   return (
     <div className="p-10 space-y-8 h-screen flex flex-col">
       <header className="flex items-center justify-between shrink-0">
@@ -120,7 +147,12 @@ export default function Sessions() {
           {/* Right Panel: Detail View */}
           <div className="lg:col-span-2 rounded-2xl reflective overflow-hidden bg-black/20 flex flex-col min-h-0">
             {selected ? (
-              <SessionDetailView sessionId={selected} messages={messages} />
+              <SessionDetailView 
+                sessionId={selected} 
+                messages={messages} 
+                onExport={handleExportSession}
+                onDelete={handleDeleteSession}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
                 <div className="w-12 h-12 rounded-full bg-white/[0.03] border border-white/[0.05] flex items-center justify-center">

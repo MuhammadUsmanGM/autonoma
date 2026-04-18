@@ -12,17 +12,17 @@ const PROVIDERS = [
   { value: 'anthropic', label: 'Anthropic', desc: 'Direct Claude API' },
 ]
 
-const MODEL_SUGGESTIONS: Record<string, string[]> = {
+const MODEL_SUGGESTIONS: Record<string, { value: string; label: string }[]> = {
   openrouter: [
-    'anthropic/claude-sonnet-4.5',
-    'anthropic/claude-haiku-4.5',
-    'openai/gpt-4o-mini',
-    'google/gemini-2.0-flash-exp',
+    { value: 'anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 ($3.00 / 1M)' },
+    { value: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 ($0.25 / 1M)' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini ($0.15 / 1M)' },
+    { value: 'google/gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Free)' },
   ],
   anthropic: [
-    'claude-sonnet-4-6',
-    'claude-haiku-4-5-20251001',
-    'claude-opus-4-6',
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 ($3.00 / 1M)' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 ($0.25 / 1M)' },
+    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 ($15.00 / 1M)' },
   ],
 }
 
@@ -242,7 +242,7 @@ export default function Settings() {
           <Dropdown 
             label="Model"
             value={currentModel}
-            options={[...models, ...(models.includes(currentModel) ? [] : [currentModel])]}
+            options={[...models, ...(models.some(m => m.value === currentModel) ? [] : [{ value: currentModel, label: currentModel }])]}
             onChange={(val) => updateDraft('llm.model', val)}
           />
 

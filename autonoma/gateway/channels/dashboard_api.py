@@ -671,6 +671,70 @@ def register_dashboard_routes(
             logger.error("Dashboard GET /api/webhooks error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    async def handle_alerts(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        from autonoma.alerts import alert_manager
+        return 200, headers, json.dumps(alert_manager.list_alerts())
+
+    async def handle_alert_read(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        from autonoma.alerts import alert_manager
+        data = request.get("json", {})
+        alert_id = data.get("id")
+        alert_manager.mark_read(alert_id)
+        return 200, headers, json.dumps({"status": "ok"})
+
+    async def handle_task_create(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if not task_queue:
+            return 404, headers, json.dumps({"error": "Task queue not found"})
+        try:
+            data = request.get("json", {})
+            name = data.get("name", "Dashboard Task")
+            skill = data.get("skill")
+            args = data.get("args", {})
+            priority = int(data.get("priority", 2))
+            
+            if not skill:
+                return 400, headers, json.dumps({"error": "Missing skill field"})
+            
+            from autonoma.cortex.task import Task
+            task = Task(name=name, skill=skill, args=args, priority=priority)
+            task_queue.enqueue(task)
+            return 200, headers, json.dumps({"status": "enqueued", "id": task.id})
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_memory_consolidate(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        try:
+            # Consolidation is usually a background process. Trigger it now.
+            asyncio.create_task(memory_store.consolidate_memories())
+            return 200, headers, json.dumps({"status": "consolidation_triggered"})
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_memory_export(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        try:
+            all_memories = await asyncio.to_thread(memory_store._db.get_all_active, limit=5000)
+            return 200, headers, json.dumps(all_memories)
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_session_delete(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        try:
+            path = request.get("path", "").strip("/")
+            parts = path.split("/")
+            if len(parts) < 3:
+                return 400, headers, json.dumps({"error": "Missing session ID"})
+            session_id = "_".join(parts[2:])
+            await session_manager.delete_session(session_id)
+            return 200, headers, json.dumps({"deleted": session_id})
+        except Exception as e:
+            return 500, headers, json.dumps({"error": str(e)})
+
     async def handle_webhook_replay(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/webhooks/{id}/replay"""
         headers = {"Content-Type": "application/json"}
@@ -740,9 +804,16 @@ def register_dashboard_routes(
     http_server.add_route("POST", "/api/channels/gmail/credentials", handle_channel_credentials)
     http_server.add_route("GET", "/api/logs", handle_logs)
     http_server.add_route("GET", "/api/webhooks", handle_webhooks)
-    http_server.add_route("POST", "/api/webhooks", handle_webhook_replay) # Using wildcard prefix catch since it's dynamic /{id}/replay. Wait, let's just make it a static route, but HTTPServer might not support path params natively.
+    http_server.add_route("POST", "/api/webhooks", handle_webhook_replay)
+    
+    http_server.add_route("GET", "/api/alerts", handle_alerts)
+    http_server.add_route("POST", "/api/alerts/read", handle_alert_read)
+    http_server.add_route("POST", "/api/tasks", handle_task_create)
+    http_server.add_route("POST", "/api/memories/consolidate", handle_memory_consolidate)
+    http_server.add_route("GET", "/api/memories/export", handle_memory_export)
+    http_server.add_route("DELETE", "/api/sessions", handle_session_delete)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 25)
+    logger.info("Dashboard API routes registered (%d endpoints)", 31)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

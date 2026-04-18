@@ -28,75 +28,75 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   const checkNow = useCallback(async () => {
     try {
-      // 1. Check health/stats
+      // 1. Get backend alerts
+      const backendAlerts = await api.getAlerts()
+      
+      // 2. Perform local heuristic checks
       const stats = await api.getStats()
-      const newAlerts: Notification[] = []
+      const localAlerts: Notification[] = []
 
-      // Memory threshold check (e.g. > 1000 active nodes)
-      if (stats.memory_active > 1000) {
-        newAlerts.push({
-          id: `mem-${Date.now()}`,
+      if (stats.memory_active > 1500) {
+        localAlerts.push({
+          id: `local-mem-${Date.now()}`,
           type: 'warning',
-          title: 'Memory Threshold',
-          message: `Active cognitive nodes (${stats.memory_active}) exceeding optimal buffer size.`,
+          title: 'High Cognitive Load',
+          message: `${stats.memory_active} active nodes. Consider consolidation.`,
           timestamp: new Date().toISOString(),
           read: false
         })
       }
 
-      // Channel disconnect check
-      if (stats.channel_count === 0) {
-        newAlerts.push({
-          id: `chan-${Date.now()}`,
-          type: 'error',
-          title: 'All Channels Offline',
-          message: 'Agent is currently isolated. No active communication channels found.',
-          timestamp: new Date().toISOString(),
-          read: false
-        })
-      }
+      // Convert backend alerts to frontend notification format
+      const formattedBackend = backendAlerts.map(a => ({
+        id: a.id,
+        type: a.level as any,
+        title: a.title,
+        message: a.message,
+        timestamp: a.timestamp,
+        read: a.read
+      }))
 
-      // 2. Check recent traces for errors
-      const traces = await api.getTraces(5)
-      traces.forEach(t => {
-        if (t.status === 'error' && !notifications.some(n => n.id === t.id)) {
-          newAlerts.push({
-            id: t.id,
-            type: 'error',
-            title: `Task Failed: ${t.channel}`,
-            message: t.error || 'Unknown execution error',
-            timestamp: t.started_at,
-            read: false
-          })
-        }
+      // Merge and sort
+      setNotifications(prev => {
+        const merged = [...formattedBackend]
+        // Add only unique local ones if they aren't already represented
+        localAlerts.forEach(la => {
+          if (!merged.some(m => m.title === la.title && !m.read)) {
+            merged.push(la)
+          }
+        })
+        return merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 100)
       })
 
-      if (newAlerts.length > 0) {
-        // Prevent duplicate spam of system alerts by comparing titles
-        setNotifications(prev => {
-          const uniqueNew = newAlerts.filter(na => 
-            !prev.some(p => p.title === na.title && p.type === na.type && !p.read)
-          )
-          return [...uniqueNew, ...prev].slice(0, 50)
-        })
-      }
     } catch (e) {
       console.error('Failed to poll alerts', e)
     }
-  }, [notifications])
+  }, [])
 
   useEffect(() => {
     checkNow()
-    const id = setInterval(checkNow, 30000) // Poll every 30s
+    const id = setInterval(checkNow, 10000) // Poll every 10s for health
     return () => clearInterval(id)
   }, [checkNow])
 
-  const markAsRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+  const markAsRead = async (id: string) => {
+    try {
+      if (!id.startsWith('local-')) {
+        await api.markAlertRead(id)
+      }
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    } catch (e) {
+      console.error('Failed to mark alert as read', e)
+    }
   }
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+  const markAllAsRead = async () => {
+    try {
+      await api.markAlertRead() // Mark all on backend
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+    } catch (e) {
+      console.error('Failed to mark all alerts as read', e)
+    }
   }
 
   const clearAll = () => {

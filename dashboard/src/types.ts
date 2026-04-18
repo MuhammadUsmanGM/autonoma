@@ -143,6 +143,22 @@ export interface LogEntry {
   msg_raw: string
 }
 
+export interface Alert {
+  id: string
+  level: 'info' | 'warning' | 'error'
+  title: string
+  message: string
+  timestamp: string
+  channel?: string
+  read: boolean
+}
+
+export interface SkillManifest {
+  name: string
+  description: string
+  parameters: Record<string, any>
+}
+
 export interface WebhookEntry {
   id: string
   timestamp: string
