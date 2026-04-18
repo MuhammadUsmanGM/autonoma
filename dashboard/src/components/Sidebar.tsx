@@ -9,7 +9,6 @@ const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] =
   { page: 'memory', label: 'Memory', icon: Brain },
   { page: 'sessions', label: 'Sessions', icon: History },
   { page: 'traces', label: 'Traces', icon: Activity },
-  { page: 'logs', label: 'Logs', icon: Terminal },
   { page: 'tasks', label: 'Tasks', icon: ListTodo },
 ]
 
@@ -51,7 +50,7 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-4 space-y-1.5">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-4 space-y-1.5 custom-scrollbar">
         {NAV_ITEMS.map(({ page, label, icon: Icon }) => {
           const active = current === page
           return (
@@ -120,6 +119,28 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
                 )}
                 <Globe size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
                 <span className="relative z-10">Channels</span>
+              </button>
+            )
+          })()}
+          
+          {(() => {
+            const active = current === 'logs'
+            return (
+              <button
+                onClick={() => onChange('logs')}
+                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
+                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="active-nav"
+                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <Terminal size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+                <span className="relative z-10">Logs</span>
               </button>
             )
           })()}
