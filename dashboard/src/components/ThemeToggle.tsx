@@ -1,6 +1,6 @@
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 
 export default function ThemeToggle() {
   const { theme, setTheme } = useTheme()

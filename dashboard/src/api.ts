@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig } from './types'
 
 const BASE = '/api'
 
@@ -21,6 +21,15 @@ export const api = {
 
   deleteMemory: (id: number) =>
     request<{ deleted: number }>(`/memories/${id}`, { method: 'DELETE' }),
+
+  getStaleMemories: () => request<Memory[]>('/memories/stale'),
+
+  reviewMemory: (id: number, action: 'review' | 'dismiss') =>
+    request<{ reviewed?: string; dismissed?: string }>('/memories/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memory_id: id, action }),
+    }),
 
   getSessions: () => request<Session[]>('/sessions'),
 
@@ -54,4 +63,27 @@ export const api = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json() as Promise<{ response: string; session_id: string }>
   },
+
+  getConfig: () => request<AppConfig>('/config'),
+
+  updateConfig: (data: Record<string, unknown>) =>
+    request<{ status: string; updated: string[]; restart_required: boolean }>('/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  getSoul: () =>
+    request<{ content: string; exists: boolean; size_bytes?: number; modified?: number }>('/soul'),
+
+  updateSoul: (content: string) =>
+    request<{ status: string; size_bytes: number }>('/soul', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    }),
+
+  getSkills: () => request<Array<{ name: string; description: string; provider: string }>>('/skills/manifest'),
+
+  restartAgent: () => request<{ status: string }>('/system/restart', { method: 'POST' }),
 }

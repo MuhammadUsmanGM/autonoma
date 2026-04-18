@@ -294,6 +294,7 @@ class AutonomaTUI:
         items = [
             ("Live logs", self._logs_viewer),
             ("Manage configuration", self._manage_menu),
+            ("Manage channels", self._manage_channels),
             ("Open web dashboard", self._open_dashboard),
             ("Check status", self._show_status),
             ("Restart Autonoma", self._restart_agent),
@@ -483,19 +484,9 @@ class AutonomaTUI:
     # ----- [M] Manage (stops agent, shows menu, restarts) -----
 
     def _manage_menu(self) -> None:
-        """Open the manage menu. Agent must be stopped to change config safely."""
-        was_running = self.runner is not None and self.runner.is_running()
-        if was_running and self.runner is not None:
-            self.console.clear()
-            self.console.print(
-                Panel(
-                    "[yellow]Stopping agent to safely change configuration…[/]",
-                    border_style="yellow",
-                )
-            )
-            self.runner.stop()
-
-        try:
+        """Manage configuration submenu. Stops the agent for the duration
+        so YAML/env writes can't race with the running channels."""
+        def body() -> None:
             while True:
                 idx = self._arrow_select(
                     title="[bold]Manage[/]",
@@ -519,6 +510,37 @@ class AutonomaTUI:
                         self._channel_menu()
                     except BackSignal:
                         pass
+        self._with_agent_stopped(body)
+
+    def _manage_channels(self) -> None:
+        """Top-level shortcut straight into the channel menu.
+
+        Same safety wrapper as `_manage_menu` — we stop the agent before
+        editing .env / autonoma.yaml so toggles/credential writes apply
+        cleanly on restart, then relaunch the agent on exit.
+        """
+        def body() -> None:
+            try:
+                self._channel_menu()
+            except BackSignal:
+                pass
+        self._with_agent_stopped(body)
+
+    def _with_agent_stopped(self, body) -> None:
+        """Run `body()` with the agent stopped, then restart it if it had
+        been running. Any exception in body still triggers the restart."""
+        was_running = self.runner is not None and self.runner.is_running()
+        if was_running and self.runner is not None:
+            self.console.clear()
+            self.console.print(
+                Panel(
+                    "[yellow]Stopping agent to safely change configuration…[/]",
+                    border_style="yellow",
+                )
+            )
+            self.runner.stop()
+        try:
+            body()
         finally:
             if was_running:
                 self.console.clear()
@@ -711,7 +733,11 @@ class AutonomaTUI:
     def _channel_action_prompt(self, name: str) -> None:
         idx = self._arrow_select(
             title=f"[bold]{name}[/]",
-            items=["Toggle enable/disable", "Configure credentials"],
+            items=[
+                "Toggle enable/disable",
+                "Configure credentials",
+                "Reconnect (clear session & re-auth)",
+            ],
             header_renderer=self._print_banner,
             allow_back=True,
         )
@@ -719,6 +745,85 @@ class AutonomaTUI:
             self._toggle_channel(name)
         elif idx == 1:
             self._configure_channel(name)
+        elif idx == 2:
+            self._reconnect_channel(name)
+
+    def _reconnect_channel(self, name: str) -> None:
+        """Force a fresh login for `name`.
+
+        Covers the case where the remote side has dropped us (phone logged
+        out of WhatsApp, bot token revoked, Gmail app password rotated) but
+        local state still looks valid. For WhatsApp we wipe the persisted
+        whatsapp-web.js session directory — otherwise the bridge will try
+        to resume a dead session forever. For token-only channels we reopen
+        the credential prompt so the user can paste a fresh token.
+        """
+        self._print_banner()
+        self.console.print(Rule(f"[bold]Reconnect {name}[/]", style="cyan"))
+
+        cleared_paths: list[Path] = []
+        if name == "whatsapp":
+            # whatsapp-web.js LocalAuth persists under whatsapp-bridge/.
+            # Wipe both auth and cache so the bridge shows a new QR on
+            # next launch.
+            bridge_dir = self.workspace / "whatsapp-bridge"
+            import shutil
+            for sub in (".wwebjs_auth", ".wwebjs_cache"):
+                target = bridge_dir / sub
+                if target.exists():
+                    try:
+                        shutil.rmtree(target)
+                        cleared_paths.append(target)
+                    except OSError as e:
+                        self.console.print(
+                            f"[red]Could not remove {target}: {e}[/]"
+                        )
+            if cleared_paths:
+                self.console.print(
+                    "[green]✓ Cleared local WhatsApp session:[/]"
+                )
+                for p in cleared_paths:
+                    self.console.print(f"  [dim]{p}[/]")
+            else:
+                self.console.print(
+                    "[dim]No cached WhatsApp session found on disk — nothing to wipe.[/]"
+                )
+            self.console.print(
+                "\n[bold]Next:[/] restart Autonoma and watch the bridge output — "
+                "it will print a fresh QR code for your phone to scan."
+            )
+            # Make sure the bridge URL is present so the agent actually
+            # starts the bridge. If the user cleared it, reprompt.
+            if not os.getenv("WHATSAPP_BRIDGE_URL"):
+                self.console.print(
+                    "\n[yellow]WHATSAPP_BRIDGE_URL is not set — configure it now:[/]"
+                )
+                self._configure_channel(name)
+            self._pause()
+            return
+
+        # Token/password channels: the "reconnect" story is just
+        # "re-enter the credential". Walk the user through configure, then
+        # flip the channel off-and-on so the runtime picks up the new
+        # values on next start.
+        self.console.print(
+            f"[dim]Reconnect for [bold]{name}[/] means re-entering its "
+            f"credentials. The old values will be overwritten.[/]\n"
+        )
+        self._configure_channel(name)
+        # Force a disable→enable cycle so the runtime re-initializes the
+        # client with the new credential on next agent start.
+        if self._channel_enabled(name):
+            for var in CHANNEL_ENV[name]:
+                self._disable_env(var)
+            for var in CHANNEL_ENV[name]:
+                self._enable_env(var)
+            self._set_channel_enabled_in_yaml(name, True)
+            self.console.print(
+                f"\n[green]✓ {name} credentials rotated. "
+                f"Restart Autonoma to apply.[/]"
+            )
+        self._pause(short=True)
 
     def _ensure_env_loaded(self) -> None:
         """Reload .env into os.environ only if the file changed on disk."""
