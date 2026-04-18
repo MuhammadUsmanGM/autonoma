@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Terminal, Search, Filter, AlertTriangle, Pause, Play, Download } from 'lucide-react'
+import { Terminal, Search, AlertTriangle, Pause, Play, Download } from 'lucide-react'
 import { api } from '../api'
 import type { LogEntry } from '../types'
 import Dropdown from '../components/Dropdown'

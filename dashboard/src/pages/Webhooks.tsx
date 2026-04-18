@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Webhook, RefreshCw, Play, Clock, Braces, ChevronRight, AlertTriangle } from 'lucide-react'
+import { Webhook, RefreshCw, Play, Clock, Braces, ChevronRight } from 'lucide-react'
 import { api } from '../api'
 import { toast } from 'sonner'
 import type { WebhookEntry } from '../types'

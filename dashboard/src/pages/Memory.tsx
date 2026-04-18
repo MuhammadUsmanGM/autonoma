@@ -72,7 +72,7 @@ export default function MemoryPage() {
     }
   }
 
-  const triggerDelete = (id: number) => setConfirmDelete({ id })
+
   const triggerBulkDelete = () => setConfirmDelete({ bulk: true })
 
   const handleReview = async (id: number, action: 'review' | 'dismiss') => {

@@ -57,7 +57,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       }))
 
       // Merge and sort
-      setNotifications(prev => {
+      setNotifications(() => {
         const merged = [...formattedBackend]
         // Add only unique local ones if they aren't already represented
         localAlerts.forEach(la => {

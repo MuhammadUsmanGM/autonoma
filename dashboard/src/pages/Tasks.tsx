@@ -19,19 +19,15 @@ const STATUS_CONFIG: Record<string, { color: string; icon: typeof CheckCircle2; 
 function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false)
   const [task, setTask] = useState(initialTask)
-  const [loading, setLoading] = useState(false)
 
   const handleExpand = async () => {
     if (!expanded) {
       setExpanded(true)
-      setLoading(true)
       try {
         const fullTask = await api.getTask(initialTask.id)
         setTask(fullTask)
       } catch (e) {
         console.error('Failed to hydrate task:', e)
-      } finally {
-        setLoading(false)
       }
     } else {
       setExpanded(false)

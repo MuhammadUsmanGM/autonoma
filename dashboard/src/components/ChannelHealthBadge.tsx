@@ -19,7 +19,6 @@ const CONFIG: Record<Status, { color: string; bg: string; icon: any, label: stri
 
 export default function ChannelHealthBadge({ status, error, size = 'md' }: Props) {
   const cfg = CONFIG[status] || CONFIG.stopped
-  const Icon = cfg.icon
 
   return (
     <div className="flex items-center gap-2 group relative">

@@ -127,7 +127,7 @@ export default function Channels() {
           const MetaIcon = CHANNEL_META[ch.id]?.icon || Globe
           const isError = ch.status === 'error'
           const isRunning = ch.status === 'running'
-          const isStarting = ch.status === 'starting'
+          
           
           return (
             <motion.div
