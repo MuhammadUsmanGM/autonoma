@@ -640,18 +640,36 @@ class AutonomaTUI:
         self._print_banner()
         self.console.print(Rule("[bold]Step 2 of 3 — API key[/]", style="cyan"))
         self.console.print(f"Will be saved to .env as [cyan]{env_key_name}[/]")
-        self.console.print("[dim]Input is hidden. Press Enter with empty input to skip.[/]\n")
-        try:
-            api_key = getpass.getpass("  › ").strip()
-        except (EOFError, KeyboardInterrupt):
-            # During forced first-run, Ctrl+C during getpass should still
-            # let run()'s outer handler bail the whole TUI cleanly. But we
-            # absolutely must not leave the user in a half-configured state
-            # with no key set — just abort this step and let the caller
-            # decide whether to re-prompt.
-            if forced:
-                raise
-            return
+        if forced:
+            # On first run we MUST get a key — the agent cannot start without
+            # one and the TUI would otherwise sit on a permanent ERROR status.
+            self.console.print(
+                "[dim]Input is hidden. Ctrl+C to quit without setting up.[/]\n"
+            )
+        else:
+            self.console.print(
+                "[dim]Input is hidden. Press Enter with empty input to skip.[/]\n"
+            )
+
+        while True:
+            try:
+                api_key = getpass.getpass("  › ").strip()
+            except (EOFError, KeyboardInterrupt):
+                # Forced first-run: let the outer run() handler quit the TUI
+                # cleanly — the user explicitly chose to abort setup.
+                if forced:
+                    raise
+                return
+
+            if api_key or not forced:
+                break
+
+            # Forced + empty: re-prompt rather than saving a half-configured
+            # provider with no key (which would leave _is_first_run lying).
+            self.console.print(
+                "[red]An API key is required to continue.[/] "
+                "[dim]Press Ctrl+C to quit instead.[/]"
+            )
 
         suggestions = MODEL_SUGGESTIONS[provider]
         options = list(suggestions) + ["Custom (type your own)"]
