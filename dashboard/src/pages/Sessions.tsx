@@ -5,6 +5,8 @@ import { api } from '../api'
 import SessionList from '../components/SessionList'
 import SessionDetailView from '../components/SessionDetail'
 import Skeleton from '../components/Skeleton'
+import ConfirmDialog from '../components/ConfirmDialog'
+import EmptyState from '../components/EmptyState'
 import type { Session, SessionMessage } from '../types'
 
 export default function Sessions() {
@@ -14,6 +16,7 @@ export default function Sessions() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all')
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -53,7 +56,6 @@ export default function Sessions() {
 
   const handleDeleteSession = async () => {
     if (!selected) return
-    if (!confirm('Permanently prune this session log?')) return
     try {
       await api.deleteSession(selected)
       setSessions(prev => prev.filter(s => s.id !== selected))
@@ -136,10 +138,11 @@ export default function Sessions() {
                 {filteredSessions.length > 0 ? (
                   <SessionList sessions={filteredSessions} selected={selected} onSelect={selectSession} />
                 ) : (
-                  <div className="py-20 text-center">
-                      <Filter size={24} className="mx-auto mb-3 text-[var(--text-faint)]" />
-                      <p className="text-[10px] font-bold text-[var(--text-faint)] uppercase tracking-widest">No matching resonance</p>
-                  </div>
+                  <EmptyState 
+                    icon={Filter}
+                    title="No Matching Resonance"
+                    description="Adjust your search parameters or platform filters to locate a specific handshake."
+                  />
                 )}
              </div>
           </div>
@@ -151,7 +154,7 @@ export default function Sessions() {
                 sessionId={selected} 
                 messages={messages} 
                 onExport={handleExportSession}
-                onDelete={handleDeleteSession}
+                onDelete={() => setShowDeleteConfirm(true)}
               />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
@@ -167,6 +170,15 @@ export default function Sessions() {
           </div>
         </div>
       )}
+      <ConfirmDialog 
+        isOpen={showDeleteConfirm}
+        title="Permanently Prune Session?"
+        description="You are about to discard all interaction logs for this neural link. This cannot be undone and will remove the historical audit trail."
+        confirmLabel="Prune Resonance"
+        isDestructive
+        onConfirm={handleDeleteSession}
+        onClose={() => setShowDeleteConfirm(false)}
+      />
     </div>
   )
 }

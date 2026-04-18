@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { api } from '../api'
 import Skeleton from '../components/Skeleton'
 import StatsCard from '../components/StatsCard'
+import EmptyState from '../components/EmptyState'
 import type { TaskItem, TaskStats } from '../types'
 
 const STATUS_CONFIG: Record<string, { color: string; icon: typeof CheckCircle2; label: string }> = {
@@ -233,11 +234,13 @@ export default function Tasks() {
         {loading ? (
           <Skeleton className="h-full reflective rounded-2xl" />
         ) : tasks.length === 0 ? (
-          <div className="text-center py-20 reflective rounded-2xl">
-            <ListTodo size={32} className="mx-auto mb-4 text-white/10" />
-            <p className="text-sm text-white/30 font-medium">No tasks in queue</p>
-            <p className="text-xs text-white/15 mt-1">Tasks appear here when the agent schedules autonomous work</p>
-          </div>
+          <EmptyState 
+            icon={ListTodo}
+            title="Task Queue Clear"
+            description="No autonomous work items are currently scheduled. Tasks appear here when the agent identifies background work or you manually dispatch a mission."
+            actionLabel="Dispatch New Task"
+            onAction={() => setShowNewTask(true)}
+          />
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 20 }}

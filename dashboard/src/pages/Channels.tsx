@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Activity, Power, RefreshCw, AlertTriangle, Key, ChevronRight, MessageSquare, Mail, Globe, Bot } from 'lucide-react'
+import { Power, RefreshCw, AlertTriangle, Key, ChevronRight, MessageSquare, Mail, Globe, Bot } from 'lucide-react'
 import { api } from '../api'
 import { toast } from 'sonner'
 import Skeleton from '../components/Skeleton'
+import ChannelHealthBadge from '../components/ChannelHealthBadge'
 import type { ChannelInfo } from '../types'
 
 const CHANNEL_META: Record<string, { desc: string, icon: any }> = {
@@ -156,15 +157,10 @@ export default function Channels() {
                 </div>
                 
                 {/* Status Badge */}
-                <div className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md border flex items-center gap-1.5 ${
-                  isError ? 'bg-[var(--error)]/10 border-[var(--error)]/20 text-[var(--error)]' :
-                  isRunning ? 'bg-[var(--success)]/10 border-[var(--success)]/20 text-[var(--success)]' :
-                  isStarting ? 'bg-[var(--accent)]/10 border-[var(--accent)]/20 text-[var(--accent)]' :
-                  'bg-[var(--bg-faint)] border-[var(--border)] text-[var(--text-muted)]'
-                }`}>
-                  {isStarting && <RefreshCw size={10} className="animate-spin" />}
-                  {ch.status}
-                </div>
+                <ChannelHealthBadge 
+                  status={ch.status as any} 
+                  error={ch.last_error}
+                />
               </div>
 
               {/* Error Output */}

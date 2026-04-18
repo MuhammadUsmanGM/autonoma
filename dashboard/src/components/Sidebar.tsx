@@ -1,7 +1,10 @@
 import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell, Globe, Terminal, Webhook } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useNotifications } from '../contexts/NotificationsContext'
+import LiveLogStream from './LiveLogStream'
 import type { Page } from '../types'
+import { useState } from 'react'
+import { X } from 'lucide-react'
 
 const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { page: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -23,6 +26,7 @@ interface Props {
 
 export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
   const { unreadCount } = useNotifications()
+  const [showDebug, setShowDebug] = useState(false)
 
   return (
     <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0 z-20 font-sans">
@@ -176,14 +180,58 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
           <ThemeToggle />
         </div>
         
-        <div className="px-4 py-3 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] flex items-center justify-between">
+        <button 
+          onClick={() => setShowDebug(true)}
+          className="w-full px-4 py-3 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] flex items-center justify-between hover:bg-[var(--overlay)] transition-all group"
+        >
           <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)]" />
-            <span className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Live</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)] animate-pulse" />
+            <span className="text-[11px] font-bold text-[var(--text-muted)] group-hover:text-white uppercase tracking-widest">Live Telemetry</span>
           </div>
-          <span className="text-[10px] text-[var(--text-faint)] font-mono">v0.1.0</span>
-        </div>
+          <span className="text-[10px] text-[var(--text-faint)] font-mono">DEBUG</span>
+        </button>
       </div>
+
+      {/* Live Log Drawer Overlay */}
+      <AnimatePresence>
+        {showDebug && (
+          <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-none">
+             <motion.div 
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               onClick={() => setShowDebug(false)}
+               className="absolute inset-0 bg-black/60 backdrop-blur-md pointer-events-auto"
+             />
+             <motion.div 
+               initial={{ y: '100%' }}
+               animate={{ y: 0 }}
+               exit={{ y: '100%' }}
+               transition={{ type: 'spring', damping: 25, stiffness: 150 }}
+               className="relative w-full max-w-6xl h-[60vh] bg-black border-t border-white/10 rounded-t-3xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col"
+             >
+                <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/[0.02]">
+                   <div className="flex items-center gap-3">
+                      <Terminal size={18} className="text-[var(--accent)]" />
+                      <div>
+                        <h3 className="text-sm font-bold text-white uppercase tracking-widest">Neural Stream Inspector</h3>
+                        <p className="text-[10px] text-white/20">Active WebSocket: {window.location.host}/api/ws</p>
+                      </div>
+                   </div>
+                   <button 
+                     onClick={() => setShowDebug(false)}
+                     className="p-2 rounded-xl hover:bg-white/5 text-white/20 hover:text-white transition-all"
+                   >
+                     <X size={20} />
+                   </button>
+                </div>
+                <div className="flex-1 p-6 overflow-hidden">
+                   <LiveLogStream />
+                </div>
+             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </aside>
   )
 }

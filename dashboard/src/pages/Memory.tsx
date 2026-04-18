@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Search, RefreshCw, Sparkles, Trash2, CheckSquare, X, Database, Download } from 'lucide-react'
+import { Search, RefreshCw, Sparkles, Trash2, X, Database, Download } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { api } from '../api'
 import MemoryTable from '../components/MemoryTable'
 import type { Memory } from '../types'
 import Skeleton from '../components/Skeleton'
+import ConfirmDialog from '../components/ConfirmDialog'
+import EmptyState from '../components/EmptyState'
 
 const TYPES = ['all', 'remember', 'fact', 'preference', 'conversation_summary', 'maintenance']
 
@@ -16,6 +18,7 @@ export default function MemoryPage() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [confirmDelete, setConfirmDelete] = useState<{ id?: number, bulk?: boolean } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -68,6 +71,9 @@ export default function MemoryPage() {
       toast.error('Failed to prune memory')
     }
   }
+
+  const triggerDelete = (id: number) => setConfirmDelete({ id })
+  const triggerBulkDelete = () => setConfirmDelete({ bulk: true })
 
   const handleReview = async (id: number, action: 'review' | 'dismiss') => {
     try {
@@ -269,9 +275,12 @@ export default function MemoryPage() {
             )
           })}
           {filtered.length === 0 && (
-            <div className="col-span-full py-20 text-center rounded-3xl reflective border border-dashed border-white/10">
-              <Sparkles className="mx-auto mb-4 text-[var(--accent)]/20" size={40} />
-              <p className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-widest">Cognitive resonance clear</p>
+            <div className="col-span-full">
+              <EmptyState 
+                icon={Sparkles}
+                title="Cognitive Resonance Clear"
+                description="The maintenance buffer is healthy. No decaying neural nodes require immediate operator intervention."
+              />
             </div>
           )}
         </div>
@@ -316,7 +325,7 @@ export default function MemoryPage() {
             
             <div className="flex items-center gap-4">
               <button 
-                onClick={bulkDelete}
+                onClick={triggerBulkDelete}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-white text-black hover:bg-white/90 transition-all cursor-pointer"
               >
                 <Trash2 size={16} />
@@ -332,6 +341,21 @@ export default function MemoryPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ConfirmDialog 
+        isOpen={!!confirmDelete}
+        title={confirmDelete?.bulk ? "Confirm Batch Pruning" : "Prune Neural Node"}
+        description={confirmDelete?.bulk 
+          ? `You are about to permanently delete ${selectedIds.length} memories from the cognitive registry. This action cannot be reversed.`
+          : "Are you sure you want to discard this specific memory? This may affect the agent's long-term context."
+        }
+        isDestructive
+        confirmLabel={confirmDelete?.bulk ? `Prune ${selectedIds.length} Nodes` : "Discard Memory"}
+        onConfirm={() => {
+          if (confirmDelete?.bulk) bulkDelete()
+          else if (confirmDelete?.id) handleDelete(confirmDelete.id)
+        }}
+        onClose={() => setConfirmDelete(null)}
+      />
     </div>
   )
 }
