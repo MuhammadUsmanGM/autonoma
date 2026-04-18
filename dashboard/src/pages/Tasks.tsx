@@ -169,14 +169,25 @@ export default function Tasks() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     const form = e.target as HTMLFormElement
-    const data = {
-      name: (form.elements.namedItem('name') as HTMLInputElement).value,
-      skill: (form.elements.namedItem('skill') as HTMLSelectElement).value,
-      args: JSON.parse((form.elements.namedItem('args') as HTMLTextAreaElement).value || '{}'),
-      priority: parseInt((form.elements.namedItem('priority') as HTMLSelectElement).value)
-    }
-    
+    // Parse the args textarea BEFORE building the payload and keep it inside
+    // the try/catch so malformed JSON surfaces as a toast rather than throwing
+    // out of the handler (which would silently leave the modal open with no
+    // feedback to the user).
     try {
+      const rawArgs = (form.elements.namedItem('args') as HTMLTextAreaElement).value.trim()
+      let args: unknown
+      try {
+        args = rawArgs ? JSON.parse(rawArgs) : {}
+      } catch (parseErr: any) {
+        toast.error(`Invalid JSON in args: ${parseErr.message}`)
+        return
+      }
+      const data = {
+        name: (form.elements.namedItem('name') as HTMLInputElement).value,
+        skill: (form.elements.namedItem('skill') as HTMLSelectElement).value,
+        args,
+        priority: parseInt((form.elements.namedItem('priority') as HTMLSelectElement).value),
+      }
       await api.createTask(data)
       toast.success('Task scheduled')
       setShowNewTask(false)

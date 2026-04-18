@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from autonoma.config import Config
@@ -40,6 +41,10 @@ class Agent:
         )
         self._sessions = session_manager
         self._active_sessions: dict[str, str] = {}  # channel_id -> session_id
+        # Serializes session creation so two concurrent messages with the same
+        # channel_id don't both see "not in dict" and create duplicate sessions
+        # (the second would clobber the first, orphaning its memory context).
+        self._session_lock = asyncio.Lock()
 
     async def handle_message(self, message: Message) -> AgentResponse:
         """Entry point for all incoming messages."""
@@ -52,10 +57,21 @@ class Agent:
         self, channel_id: str, channel: str
     ) -> str:
         """Get existing session for this channel, or create a new one."""
-        if channel_id not in self._active_sessions:
+        # Fast path: no lock needed if session already exists. The dict read is
+        # atomic in CPython and even under concurrency the worst case is that
+        # two callers both fall through to the slow path — the lock below
+        # resolves that correctly.
+        if channel_id in self._active_sessions:
+            return self._active_sessions[channel_id]
+        async with self._session_lock:
+            # Re-check inside the lock (double-checked locking pattern) so the
+            # loser of the race returns the winner's session rather than
+            # creating a duplicate.
+            if channel_id in self._active_sessions:
+                return self._active_sessions[channel_id]
             session_id = await self._sessions.create_session(channel)
             self._active_sessions[channel_id] = session_id
             logger.info(
                 "New session %s for channel %s", session_id, channel_id
             )
-        return self._active_sessions[channel_id]
+            return session_id

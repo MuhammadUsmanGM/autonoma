@@ -24,7 +24,9 @@ class GmailChannel(ChannelAdapter):
     def __init__(self, config: GmailConfig):
         self._config = config
         self._handler: MessageHandler | None = None
-        self._running = False
+        # Event-based cancellation so stop() doesn't have to wait up to
+        # poll_interval seconds for an in-flight asyncio.sleep to return.
+        self._stop_event: asyncio.Event | None = None
 
     @property
     def name(self) -> str:
@@ -32,22 +34,38 @@ class GmailChannel(ChannelAdapter):
 
     async def start(self, message_handler: MessageHandler) -> None:
         self._handler = message_handler
-        self._running = True
+        # Event must be created inside the running loop — constructing it in
+        # __init__ would bind it to whatever loop happens to be current at
+        # import time (often none, which raises on wait()).
+        self._stop_event = asyncio.Event()
         logger.info(
             "Gmail channel started (polling every %ds for %s)",
             self._config.poll_interval,
             self._config.email_address,
         )
 
-        while self._running:
+        while not self._stop_event.is_set():
             try:
                 await self._poll_inbox()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.error("Gmail poll error: %s", e, exc_info=True)
-            await asyncio.sleep(self._config.poll_interval)
+            # Sleep OR wake early if stop() fires. wait_for raises TimeoutError
+            # when poll_interval elapses without a stop signal — that's the
+            # normal path through the loop.
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(),
+                    timeout=self._config.poll_interval,
+                )
+                break  # stop_event fired: exit the loop immediately
+            except asyncio.TimeoutError:
+                continue  # interval elapsed: poll again
 
     async def stop(self) -> None:
-        self._running = False
+        if self._stop_event is not None:
+            self._stop_event.set()
 
     async def send(self, content: str) -> None:
         pass

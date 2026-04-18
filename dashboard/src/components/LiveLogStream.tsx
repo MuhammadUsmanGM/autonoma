@@ -2,32 +2,65 @@ import { useEffect, useState, useRef } from 'react'
 import { Terminal, Search, Trash2, Pause, Play, Download } from 'lucide-react'
 import type { LogEntry } from '../types'
 
+/** Render HH:MM:SS from an ISO timestamp, falling back safely if the server
+ * ever sends a non-ISO string (older backend, tests, etc.). */
+function formatLogTime(ts: string): string {
+  if (!ts) return '--:--:--'
+  const t = ts.includes('T') ? ts.split('T')[1] : ts
+  return (t || '').split('.')[0] || ts
+}
+
 export default function LiveLogStream() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [filter, setFilter] = useState('')
   const [isPaused, setIsPaused] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [isConnected, setIsConnected] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  // Mirror isPaused into a ref so the WebSocket onmessage handler reads the
+  // current value without us having to rebuild the socket every time the user
+  // clicks pause/resume. Previously [isPaused] in the deps caused a full
+  // reconnect on every toggle, which duplicated subscriptions and leaked
+  // sockets until GC ran.
+  const pausedRef = useRef(isPaused)
+  useEffect(() => { pausedRef.current = isPaused }, [isPaused])
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`)
-    
+
     ws.onopen = () => {
+      setIsConnected(true)
       ws.send(JSON.stringify({ type: 'subscribe_logs' }))
     }
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      if (data.type === 'log' && !isPaused) {
+      // Guard JSON.parse: a malformed frame (server bug, proxy rewrite, etc.)
+      // would otherwise throw out of the handler and silently kill the stream.
+      let data: any
+      try {
+        data = JSON.parse(event.data)
+      } catch (err) {
+        console.warn('LiveLogStream: dropped malformed frame', err)
+        return
+      }
+      if (data?.type === 'log' && !pausedRef.current) {
         setLogs(prev => [...prev, data.data].slice(-500))
       }
     }
 
+    ws.onerror = (event) => {
+      console.warn('LiveLogStream: socket error', event)
+    }
+
+    ws.onclose = () => {
+      setIsConnected(false)
+    }
+
     wsRef.current = ws
-    return () => ws.close()
-  }, [isPaused])
+    return () => { ws.close() }
+  }, [])
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -110,7 +143,7 @@ export default function LiveLogStream() {
       >
         {filteredLogs.map((log, i) => (
           <div key={i} className="flex gap-4 group hover:bg-white/[0.02] px-2 py-0.5 rounded transition-all">
-            <span className="text-white/20 shrink-0">{log.timestamp.split('T')[1].split('.')[0]}</span>
+            <span className="text-white/20 shrink-0">{formatLogTime(log.timestamp)}</span>
             <span className={`shrink-0 w-12 font-bold ${
               log.level === 'ERROR' ? 'text-red-400' : 
               log.level === 'WARNING' ? 'text-yellow-400' :
@@ -131,9 +164,13 @@ export default function LiveLogStream() {
       {/* Status Bar */}
       <footer className="px-4 py-1.5 bg-black/60 border-t border-white/5 flex items-center justify-between">
          <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${isPaused ? 'bg-yellow-400' : 'bg-[var(--success)] animate-pulse'}`} />
+            <div className={`w-1.5 h-1.5 rounded-full ${
+              !isConnected ? 'bg-red-400' :
+              isPaused ? 'bg-yellow-400' :
+              'bg-[var(--success)] animate-pulse'
+            }`} />
             <span className="text-[9px] font-bold text-white/20 uppercase tracking-tighter">
-              {isPaused ? 'STREAM PAUSED' : 'LIVE CONNECTION ACTIVE'}
+              {!isConnected ? 'DISCONNECTED' : isPaused ? 'STREAM PAUSED' : 'LIVE CONNECTION ACTIVE'}
             </span>
          </div>
          <span className="text-[9px] font-bold text-white/10 uppercase tracking-tighter">

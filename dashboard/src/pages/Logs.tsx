@@ -18,6 +18,10 @@ export default function Logs() {
   const [level, setLevel] = useState('ALL')
   const [search, setSearch] = useState('')
   const [isPaused, setIsPaused] = useState(false)
+  // Tracks whether the log stream WebSocket is open. Starts false and flips
+  // true on onopen; any error/close flips it back so the UI stops lying about
+  // being "LIVE" when the backend has actually gone away.
+  const [wsConnected, setWsConnected] = useState(false)
   
   const wsRef = useRef<WebSocket | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
@@ -51,6 +55,7 @@ export default function Logs() {
         wsRef.current = ws
 
         ws.onopen = () => {
+          setWsConnected(true)
           ws.send(JSON.stringify({ type: 'subscribe_logs' }))
         }
 
@@ -60,7 +65,7 @@ export default function Logs() {
             const msg = JSON.parse(event.data)
             if (msg.type === 'log' && msg.data) {
               const line = msg.data as LogEntry
-              
+
               // Apply active filters
               if (level !== 'ALL') {
                 const ranks: Record<string, number> = { "DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40, "CRITICAL": 50 }
@@ -74,11 +79,22 @@ export default function Logs() {
               setLogs(prev => [...prev.slice(-1999), line])
             }
           } catch (e) {
-            // ignore
+            // ignore — malformed frames shouldn't kill the stream
           }
+        }
+
+        // Without these two handlers, a dropped backend or network blip leaves
+        // the UI showing "LIVE" forever because onmessage simply stops firing.
+        ws.onerror = (event) => {
+          console.warn('Logs stream socket error:', event)
+          setWsConnected(false)
+        }
+        ws.onclose = () => {
+          setWsConnected(false)
         }
       } catch (e) {
         console.error("Failed to connect WS:", e)
+        setWsConnected(false)
       }
     }
 
@@ -88,6 +104,7 @@ export default function Logs() {
       if (wsRef.current) {
         wsRef.current.close()
       }
+      setWsConnected(false)
     }
   }, [level, search]) // Re-run when filters change to fetch exact history and restart stream.
 
@@ -147,7 +164,18 @@ export default function Logs() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button 
+          <div
+            className={`flex items-center gap-2 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
+              wsConnected
+                ? 'text-[var(--success)] border-[var(--success)]/20 bg-[var(--success)]/5'
+                : 'text-[var(--error)] border-[var(--error)]/20 bg-[var(--error)]/5'
+            }`}
+            title={wsConnected ? 'Log stream connected' : 'Log stream disconnected — no live updates'}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-[var(--success)] animate-pulse' : 'bg-[var(--error)]'}`} />
+            {wsConnected ? 'LIVE' : 'OFFLINE'}
+          </div>
+          <button
             onClick={handleDownload}
             className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-faint)] transition-colors"
             title="Download Logs"
@@ -184,7 +212,7 @@ export default function Logs() {
               className="flex items-start gap-4 hover:bg-[var(--bg-faint)] rounded py-1 px-2 transition-colors group"
             >
               <div className="text-[10px] text-[var(--text-faint)] shrink-0 pt-0.5 opacity-50 group-hover:opacity-100">
-                {log.timestamp.split('T')[1]?.substring(0, 12)}
+                {log.timestamp?.split('T')[1]?.substring(0, 12) ?? '--:--:--'}
               </div>
               <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 min-w-[60px] text-center ${getLevelColor(log.level)}`}>
                 {log.level}

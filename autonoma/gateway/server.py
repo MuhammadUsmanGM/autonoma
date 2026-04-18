@@ -82,9 +82,15 @@ class GatewayServer:
         for channel in self._channels.values():
             await channel.stop()
 
-        # Cancel channel tasks
+        # Cancel channel tasks, then await them so that Discord gateway sockets,
+        # Telegram polling loops, Gmail IMAP connections, etc. all get a chance
+        # to run their CancelledError handlers and release resources before we
+        # tear down the transports underneath them.
         for task in self._channel_tasks:
             task.cancel()
+        if self._channel_tasks:
+            await asyncio.gather(*self._channel_tasks, return_exceptions=True)
+        self._channel_tasks.clear()
 
         # Close HTTP server
         if self._http_server:
@@ -204,7 +210,6 @@ class GatewayServer:
                 log_buffer.subscribers.remove(_on_event)
             alert_manager.unsubscribe(_on_event)
             if pusher_task:
-                pusher_task.cancel()
                 pusher_task.cancel()
 
     async def wait_for_channels(self) -> None:

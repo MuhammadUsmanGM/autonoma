@@ -30,8 +30,21 @@ class RESTChannel(ChannelAdapter):
     async def start(self, message_handler: MessageHandler) -> None:
         self._handler = message_handler
         self._http.add_route("POST", "/api/chat", self._handle_request)
-        logger.info("REST API channel ready at POST /api/chat")
+        if self._auth_enabled():
+            logger.info("REST API channel ready at POST /api/chat (auth: required)")
+        else:
+            # Surface this clearly — an empty/whitespace api_token is easy to
+            # leave in place accidentally and silently disables auth.
+            logger.warning(
+                "REST API channel ready at POST /api/chat (auth: DISABLED — "
+                "set channels.rest.api_token to require a Bearer token)"
+            )
         await self._stop_event.wait()
+
+    def _auth_enabled(self) -> bool:
+        """True iff a non-blank api_token is configured."""
+        token = self._config.api_token
+        return bool(token and token.strip())
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -42,8 +55,12 @@ class RESTChannel(ChannelAdapter):
     async def _handle_request(self, request: dict) -> tuple[int, dict[str, str], str]:
         headers = {"Content-Type": "application/json"}
 
-        # Auth check
-        if self._config.api_token:
+        # Auth check — only enforced when a non-blank token is configured.
+        # Treating empty/whitespace as "no token" (and then requiring it in the
+        # header) would either lock everyone out or silently accept all
+        # requests depending on how the comparison falls; instead we decide
+        # once, up front.
+        if self._auth_enabled():
             auth_header = request["headers"].get("authorization", "")
             if auth_header != f"Bearer {self._config.api_token}":
                 return 401, headers, json.dumps({"error": "Unauthorized"})
