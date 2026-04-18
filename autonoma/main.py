@@ -49,6 +49,9 @@ async def run(
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    
+    from autonoma.logs import setup_log_buffer
+    setup_log_buffer()
 
     # 2. Validate API key
     if not config.llm.api_key:

@@ -135,7 +135,7 @@ class GatewayServer:
         self._start_channel_task(channel)
 
     async def _handle_ws_connection(self, websocket, path=None) -> None:
-        """Handle incoming WebSocket connections (minimal in Phase 1)."""
+        """Handle incoming WebSocket connections from clients (like the Dashboard)."""
         # Check auth
         headers = dict(websocket.request_headers) if hasattr(websocket, 'request_headers') else {}
         if not await self._auth.authenticate(headers):
@@ -143,19 +143,49 @@ class GatewayServer:
             return
 
         logger.info("WebSocket client connected")
+        from autonoma.logs import log_buffer
+        
+        # Async queue for pushes
+        q = asyncio.Queue()
+        
+        def _on_log(entry):
+            q.put_nowait(entry)
+            
+        async def _pusher():
+            while True:
+                entry = await q.get()
+                try:
+                    await websocket.send(json.dumps({"type": "log", "data": entry}))
+                except Exception:
+                    break
+                    
+        pusher_task = None
+
         try:
             async for raw in websocket:
                 try:
                     data = json.loads(raw)
-                    await websocket.send(
-                        json.dumps({"status": "ok", "message": "WebSocket channel not fully implemented in Phase 1"})
-                    )
+                    action = data.get("type")
+                    if action == "subscribe_logs":
+                        if pusher_task is None:
+                            pusher_task = asyncio.create_task(_pusher())
+                            log_buffer.subscribers.append(_on_log)
+                        await websocket.send(json.dumps({"status": "ok", "message": "Subscribed to logs"}))
+                    else:
+                        await websocket.send(
+                            json.dumps({"status": "ok", "message": "Unknown command"})
+                        )
                 except json.JSONDecodeError:
                     await websocket.send(
                         json.dumps({"error": "Invalid JSON"})
                     )
         except websockets.exceptions.ConnectionClosed:
             logger.info("WebSocket client disconnected")
+        finally:
+            if _on_log in log_buffer.subscribers:
+                log_buffer.subscribers.remove(_on_log)
+            if pusher_task:
+                pusher_task.cancel()
 
     async def wait_for_channels(self) -> None:
         """Wait for all channel tasks to complete (blocks until shutdown)."""

@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry } from './types'
 
 const BASE = '/api'
 
@@ -105,4 +105,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
+
+  getLogs: (params: { level?: string; since?: string; q?: string }) => {
+    const qs = new URLSearchParams()
+    if (params.level) qs.append('level', params.level)
+    if (params.since) qs.append('since', params.since)
+    if (params.q) qs.append('q', params.q)
+    return request<LogEntry[]>(`/logs?${qs.toString()}`)
+  },
 }

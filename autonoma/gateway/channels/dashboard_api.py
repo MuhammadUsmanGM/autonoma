@@ -491,6 +491,33 @@ def register_dashboard_routes(
             logger.error("Dashboard POST /api/config error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    # --- Logs endpoint ---
+
+    async def handle_logs(request: dict) -> tuple[int, dict[str, str], str]:
+        """GET /api/logs?level=&since=&q="""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.logs import log_buffer
+            path = request.get("path", "")
+            
+            level = None
+            since = None
+            q = None
+            
+            if "?" in path:
+                qs = path.split("?", 1)[1]
+                params = dict(p.split("=", 1) for p in qs.split("&") if "=" in p)
+                from urllib.parse import unquote_plus
+                level = unquote_plus(params.get("level", "")) or None
+                since = unquote_plus(params.get("since", "")) or None
+                q = unquote_plus(params.get("q", "")) or None
+                
+            logs = log_buffer.get_logs(level=level, since=since, q=q, limit=500)
+            return 200, headers, json.dumps(logs)
+        except Exception as e:
+            logger.error("Dashboard GET /api/logs error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
     # --- Channel endpoints ---
 
     async def handle_channels(request: dict) -> tuple[int, dict[str, str], str]:
@@ -657,8 +684,9 @@ def register_dashboard_routes(
     http_server.add_route("POST", "/api/channels/telegram/credentials", handle_channel_credentials)
     http_server.add_route("POST", "/api/channels/discord/credentials", handle_channel_credentials)
     http_server.add_route("POST", "/api/channels/gmail/credentials", handle_channel_credentials)
+    http_server.add_route("GET", "/api/logs", handle_logs)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 22)
+    logger.info("Dashboard API routes registered (%d endpoints)", 23)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

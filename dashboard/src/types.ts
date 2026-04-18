@@ -135,4 +135,12 @@ export interface ChannelInfo {
   last_error: string | null
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels'
+export interface LogEntry {
+  timestamp: string
+  level: string
+  logger: string
+  message: string
+  msg_raw: string
+}
+
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'logs'
