@@ -409,6 +409,10 @@ class AutonomaTUI:
                 # Always push a fresh renderable — whether a key was pressed
                 # or the timeout fired — so newly arrived log lines stream in.
                 live.update(self._render_logs(tail_only=follow, scroll=scroll))
+        # Live(screen=True) exits the alt-screen which can leave stray bytes
+        # (cursor reports, the ESC we just read, etc.) in stdin. Drain them
+        # so the next menu frame doesn't consume a stale keystroke.
+        self._drain_stdin()
 
     def _render_logs(self, *, tail_only: bool, scroll: int):
         size = self.console.size
@@ -444,15 +448,37 @@ class AutonomaTUI:
     def _open_dashboard(self) -> None:
         cfg = self._safe_load_config()
         port = cfg.gateway.http_port if cfg else 8766
+        host = cfg.gateway.host if cfg else "127.0.0.1"
         url = f"http://localhost:{port}"
         self.console.clear()
+        self._print_banner()
+        self.console.print(Rule("[bold]Dashboard[/]", style="cyan"))
+
+        # Probe before opening the browser so the user sees a useful message
+        # when the HTTP server isn't up yet (e.g. agent still starting).
+        import socket
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                reachable = True
+        except OSError:
+            reachable = False
+
         self.console.print(f"\nOpening [cyan]{url}[/]…")
+        if not reachable:
+            self.console.print(
+                "[yellow]⚠ Dashboard not reachable yet — the agent may still "
+                "be starting. Opening anyway.[/]"
+            )
         try:
             webbrowser.open(url)
             self.console.print("[green]✓ Browser launched.[/]")
         except Exception as e:
             self.console.print(f"[red]Could not open browser:[/] {e}")
-        self._pause()
+        # Brief dwell so the message is visible, then auto-return to the
+        # main menu. No "press any key" gate — ESC would otherwise be eaten
+        # by _pause and the user would have to press it twice to go back.
+        time.sleep(0.9)
+        self._drain_stdin()
 
     # ----- [M] Manage (stops agent, shows menu, restarts) -----
 
@@ -595,8 +621,15 @@ class AutonomaTUI:
         self.console.print("[dim]Input is hidden. Press Enter with empty input to skip.[/]\n")
         try:
             api_key = getpass.getpass("  › ").strip()
-        except KeyboardInterrupt:
-            raise
+        except (EOFError, KeyboardInterrupt):
+            # During forced first-run, Ctrl+C during getpass should still
+            # let run()'s outer handler bail the whole TUI cleanly. But we
+            # absolutely must not leave the user in a half-configured state
+            # with no key set — just abort this step and let the caller
+            # decide whether to re-prompt.
+            if forced:
+                raise
+            return
 
         suggestions = MODEL_SUGGESTIONS[provider]
         options = list(suggestions) + ["Custom (type your own)"]
@@ -712,10 +745,21 @@ class AutonomaTUI:
                 parts.append(f"{var}=[green]{self._mask(val)}[/]")
         return " ".join(parts)
 
+    def _set_channel_enabled_in_yaml(self, name: str, enabled: bool) -> None:
+        """Persist cfg.channels.<name>.enabled so the agent honors the toggle
+        on its next start. The env-var flip alone is not enough — the runtime
+        reads this yaml field to decide which channels to wire up."""
+        save_yaml_config(
+            self.yaml_path,
+            {"channels": {name: {"enabled": bool(enabled)}}},
+        )
+        self._invalidate_config_cache()
+
     def _toggle_channel(self, name: str) -> None:
         if self._channel_enabled(name):
             for var in CHANNEL_ENV[name]:
                 self._disable_env(var)
+            self._set_channel_enabled_in_yaml(name, False)
             self.console.print(f"\n[yellow]✓ {name} disabled.[/]")
         else:
             reenabled = False
@@ -723,12 +767,17 @@ class AutonomaTUI:
                 if self._enable_env(var):
                     reenabled = True
             if reenabled:
+                self._set_channel_enabled_in_yaml(name, True)
                 self.console.print(f"\n[green]✓ {name} re-enabled.[/]")
             else:
                 self.console.print(
                     f"\n[dim]No saved credentials. Launching configuration…[/]"
                 )
                 self._configure_channel(name)
+                # After credentials are saved, mirror the enable flag to yaml
+                # only if the user actually provided the required vars.
+                if self._channel_enabled(name):
+                    self._set_channel_enabled_in_yaml(name, True)
                 return
         self._pause(short=True)
 
@@ -980,12 +1029,60 @@ class AutonomaTUI:
         return changed
 
     def _pause(self, short: bool = False) -> None:
+        """Wait for a keypress before returning to the caller.
+
+        Any key (including ESC and Ctrl+C) dismisses the prompt and returns
+        normally — we intentionally swallow Ctrl+C here so the user doesn't
+        nuke the whole TUI just to dismiss an info screen. The caller can
+        still exit from the main menu with Ctrl+C the next iteration.
+        """
         self.console.print(
             "\n[dim]Press any key to continue…[/]" if not short else "[dim]…[/]"
         )
         try:
-            key = read_key()
-            if key == KEY_CTRL_C:
-                raise KeyboardInterrupt
+            read_key()
         except KeyboardInterrupt:
-            raise
+            # Stdin in raw mode can raise this despite our handler; treat it
+            # as "dismiss the prompt" rather than propagating and tearing down
+            # the TUI. The main menu will honour a follow-up Ctrl+C.
+            pass
+        # Drain any trailing bytes (bracketed paste, mouse reports, double
+        # keypresses) so the next _arrow_select frame doesn't consume them
+        # silently — this is the reason the user had to press Enter+Up+Enter
+        # multiple times after exiting a sub-screen.
+        self._drain_stdin()
+
+    @staticmethod
+    def _drain_stdin() -> None:
+        """Non-blocking flush of any bytes sitting in the TTY input buffer.
+
+        Called after Live(screen=True) exits and after _pause returns, to
+        clear orphaned bytes produced by the alt-screen transition or held
+        keypresses. Without this, the next read_key() in _arrow_select gets
+        a stale byte and the user has to re-issue the keystroke.
+        """
+        if os.name == "nt":
+            try:
+                import msvcrt
+                while msvcrt.kbhit():
+                    msvcrt.getch()
+            except Exception:
+                pass
+            return
+        try:
+            import select
+            import termios
+            fd = sys.stdin.fileno()
+            # tcflush purges anything queued at the kernel layer; the select
+            # loop mops up anything already pulled into Python buffers.
+            try:
+                termios.tcflush(fd, termios.TCIFLUSH)
+            except Exception:
+                pass
+            while select.select([sys.stdin], [], [], 0)[0]:
+                try:
+                    sys.stdin.read(1)
+                except Exception:
+                    break
+        except Exception:
+            pass
