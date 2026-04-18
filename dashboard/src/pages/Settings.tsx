@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { api } from '../api'
 import Skeleton from '../components/Skeleton'
 import Dropdown from '../components/Dropdown'
+import ProxyHealthCard from '../components/ProxyHealthCard'
 import type { AppConfig } from '../types'
 
 const PROVIDERS = [
@@ -357,6 +358,11 @@ export default function Settings() {
           </div>
         </motion.div>
       </div>
+
+      {/* Proxy health — full width, self-contained. Lives here rather than on
+          its own page so operators see it alongside the LLM/API-key config
+          that makes a proxy necessary in the first place. */}
+      <ProxyHealthCard />
     </div>
   )
 }

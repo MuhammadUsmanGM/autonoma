@@ -21,6 +21,62 @@ logger = logging.getLogger(__name__)
 
 _start_time = time.time()
 
+# Proxy health cache — keyed by channel name ("telegram", "whatsapp", ...).
+# Populated by the background poller started in register_dashboard_routes and
+# by on-demand recheck requests. Kept at module scope so both GET and POST
+# handlers read the same data without the poller and the handler fighting over
+# any per-request state.
+_proxy_health_cache: dict[str, dict[str, Any]] = {}
+_proxy_health_lock = asyncio.Lock()
+_proxy_poller_task: asyncio.Task | None = None
+
+
+def _collect_proxy_targets() -> dict[str, str]:
+    """Enumerate configured proxy URLs per channel.
+
+    Returns a mapping of channel → proxy_url. Channels without a proxy
+    configured are still included (with empty string) so the UI can show
+    them as 'not configured' rather than silently hiding them."""
+    try:
+        from autonoma.config import load_config as _load_config
+        cfg = _load_config()
+        return {
+            "telegram": cfg.channels.telegram.proxy_url or "",
+        }
+    except Exception as e:
+        logger.warning("Proxy target enumeration failed: %s", e)
+        return {}
+
+
+async def _probe_and_cache(channel: str, proxy_url: str) -> dict[str, Any]:
+    """Run a single proxy probe and update the cache. Returns the dict form."""
+    from autonoma.gateway.proxy_health import check_proxy
+    result = await check_proxy(proxy_url, channel=channel, timeout=6.0)
+    record = result.to_dict()
+    async with _proxy_health_lock:
+        _proxy_health_cache[channel] = record
+    return record
+
+
+async def _proxy_health_poller(interval: int = 60) -> None:
+    """Background task: re-probe every configured proxy on a fixed cadence.
+
+    Runs forever; cancelled by gateway shutdown. Failures inside the loop are
+    swallowed and logged — a single bad probe must not take the poller down."""
+    while True:
+        try:
+            targets = _collect_proxy_targets()
+            await asyncio.gather(
+                *(_probe_and_cache(ch, url) for ch, url in targets.items()),
+                return_exceptions=True,
+            )
+        except Exception as e:  # pragma: no cover — defensive
+            logger.warning("Proxy health poller cycle failed: %s", e)
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+
 
 def register_dashboard_routes(
     http_server: HTTPServer,
@@ -766,6 +822,75 @@ def register_dashboard_routes(
             logger.error("Dashboard POST /api/webhooks/replay error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    async def handle_proxy_health(request: dict) -> tuple[int, dict[str, str], str]:
+        """GET /api/proxy/health — return the latest cached probe results.
+
+        If the cache is empty (startup race: endpoint hit before the first
+        poll completed) run a single synchronous sweep so callers never see
+        an empty payload for a configured proxy."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            targets = _collect_proxy_targets()
+            # Fill cache for any target the poller hasn't visited yet.
+            missing = [(ch, url) for ch, url in targets.items() if ch not in _proxy_health_cache]
+            if missing:
+                await asyncio.gather(
+                    *(_probe_and_cache(ch, url) for ch, url in missing),
+                    return_exceptions=True,
+                )
+            async with _proxy_health_lock:
+                payload = [_proxy_health_cache[ch] for ch in targets if ch in _proxy_health_cache]
+            return 200, headers, json.dumps(payload)
+        except Exception as e:
+            logger.error("Dashboard GET /api/proxy/health error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_proxy_health_recheck(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/proxy/health/recheck — force an immediate re-probe.
+
+        Optional JSON body: {"channel": "telegram"} to probe just one channel;
+        otherwise every configured proxy is re-probed. Returns the fresh
+        records so the UI can update without a separate GET roundtrip."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            body = request.get("json") or {}
+            channel_filter = (body.get("channel") or "").strip().lower()
+            targets = _collect_proxy_targets()
+            if channel_filter:
+                if channel_filter not in targets:
+                    return 404, headers, json.dumps({"error": f"No proxy configured for '{channel_filter}'"})
+                targets = {channel_filter: targets[channel_filter]}
+            results = await asyncio.gather(
+                *(_probe_and_cache(ch, url) for ch, url in targets.items()),
+                return_exceptions=True,
+            )
+            # Swap any exceptions out for the cached record (if any) — we still
+            # return 200 because the probe API itself succeeded; individual
+            # probe failures are already encoded in the record's ok/error.
+            clean: list[dict[str, Any]] = []
+            for ch, res in zip(targets.keys(), results):
+                if isinstance(res, dict):
+                    clean.append(res)
+                elif ch in _proxy_health_cache:
+                    clean.append(_proxy_health_cache[ch])
+            return 200, headers, json.dumps(clean)
+        except Exception as e:
+            logger.error("Dashboard POST /api/proxy/health/recheck error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    # Kick off the background proxy health poller. Wrapped in a guard so
+    # re-registering routes (e.g. in tests) doesn't spawn duplicate pollers.
+    global _proxy_poller_task
+    if _proxy_poller_task is None or _proxy_poller_task.done():
+        try:
+            _proxy_poller_task = asyncio.get_running_loop().create_task(
+                _proxy_health_poller(interval=60)
+            )
+        except RuntimeError:
+            # No running loop at registration time — fine, the first GET will
+            # fill the cache synchronously via the missing-targets path above.
+            _proxy_poller_task = None
+
     # Register routes
     http_server.add_route("GET", "/api/soul", handle_soul_get)
     http_server.add_route("POST", "/api/soul", handle_soul_update)
@@ -813,7 +938,10 @@ def register_dashboard_routes(
     http_server.add_route("GET", "/api/memories/export", handle_memory_export)
     http_server.add_route("DELETE", "/api/sessions", handle_session_delete)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 31)
+    http_server.add_route("GET", "/api/proxy/health", handle_proxy_health)
+    http_server.add_route("POST", "/api/proxy/health/recheck", handle_proxy_health_recheck)
+
+    logger.info("Dashboard API routes registered (%d endpoints)", 33)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest, ProxyHealth } from './types'
 
 const BASE = '/api'
 
@@ -147,4 +147,13 @@ export const api = {
   deleteSession: (id: string) => request<{ deleted: string }>(`/sessions/${id}`, { method: 'DELETE' }),
 
   getSkillManifest: () => request<SkillManifest[]>('/skills/manifest'),
+
+  getProxyHealth: () => request<ProxyHealth[]>('/proxy/health'),
+
+  recheckProxyHealth: (channel?: string) =>
+    request<ProxyHealth[]>('/proxy/health/recheck', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(channel ? { channel } : {}),
+    }),
 }

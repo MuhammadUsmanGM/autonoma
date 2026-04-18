@@ -160,6 +160,17 @@ export interface SkillManifest {
   parameters: Record<string, any>
 }
 
+export interface ProxyHealth {
+  channel: string
+  proxy_url: string      // credentials already masked by the backend
+  configured: boolean
+  ok: boolean
+  latency_ms: number | null
+  error: string | null
+  target: string         // "host:port" tunneled through
+  checked_at: number     // unix timestamp
+}
+
 export interface WebhookEntry {
   id: string
   timestamp: string

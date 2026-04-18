@@ -679,7 +679,90 @@ class AutonomaTUI:
         except Exception as e:
             self.console.print(f"[dim]Memory stats unavailable: {e}[/]")
 
+        self._render_proxy_panel(cfg)
+
         self._pause()
+
+    def _render_proxy_panel(self, cfg) -> None:
+        """Probe each configured channel proxy and render the results.
+
+        Kept off the hot Status path behind its own method so a slow probe
+        (up to `timeout` seconds per proxy) doesn't blow up the whole status
+        screen if someone's upstream SOCKS server is slow. The probe module
+        never raises — worst case we render an OFFLINE row with the error."""
+        try:
+            from autonoma.gateway.proxy_health import check_proxy, mask_proxy_url
+        except Exception as e:
+            self.console.print(f"[dim]Proxy health module unavailable: {e}[/]")
+            return
+
+        # Enumerate what we have wired up today. Telegram is the only channel
+        # that exposes a user-configurable proxy; WhatsApp uses its own bridge
+        # and Gmail/Discord/REST don't route through SOCKS. When more channels
+        # learn to use proxies, add them here.
+        configured: list[tuple[str, str]] = []
+        if cfg.channels.telegram.proxy_url:
+            configured.append(("telegram", cfg.channels.telegram.proxy_url))
+
+        if not configured:
+            self.console.print(
+                Panel(
+                    "[dim]No proxies configured. "
+                    "Set TELEGRAM_PROXY_URL in .env to route Telegram through SOCKS/HTTP.[/]",
+                    title="Proxy Health",
+                    border_style="cyan",
+                )
+            )
+            return
+
+        self.console.print("[dim]Probing proxies (this may take a few seconds)…[/]")
+        try:
+            results = asyncio.run(
+                asyncio.gather(
+                    *(check_proxy(url, channel=ch, timeout=6.0) for ch, url in configured),
+                    return_exceptions=True,
+                )
+            )
+        except Exception as e:
+            self.console.print(f"[dim]Proxy probe failed: {e}[/]")
+            return
+
+        table = Table(show_header=True, header_style="bold cyan", box=None)
+        table.add_column("Channel")
+        table.add_column("Proxy")
+        table.add_column("Status")
+        table.add_column("Latency")
+        table.add_column("Detail")
+        any_down = False
+        for (channel, url), res in zip(configured, results):
+            masked = mask_proxy_url(url)
+            if isinstance(res, Exception):
+                table.add_row(channel, masked, "[red]●[/] DOWN", "-", f"probe error: {res}")
+                any_down = True
+                continue
+            if res.ok:
+                table.add_row(
+                    channel, masked, "[green]●[/] OK",
+                    f"{res.latency_ms} ms", f"→ {res.target}",
+                )
+            else:
+                table.add_row(
+                    channel, masked, "[red]●[/] DOWN",
+                    "-", res.error or "unknown error",
+                )
+                any_down = True
+
+        self.console.print(Panel(table, title="Proxy Health", border_style="cyan"))
+
+        if any_down:
+            # Actionable hint — a dead free proxy is the single most common
+            # reason Telegram stops working, so point at the fix before the
+            # user has to go hunt for one.
+            self.console.print(
+                "[dim]Hint: if a proxy keeps dying, consider a permanent replacement — "
+                "an SSH dynamic tunnel ([cyan]ssh -D 1080 user@vps[/]) or "
+                "Cloudflare WARP in proxy mode. See docs for setup.[/]"
+            )
 
     # ----- Setup wizard -----
 
