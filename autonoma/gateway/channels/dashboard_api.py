@@ -12,6 +12,7 @@ from typing import Any
 
 from autonoma.gateway.channels._http_server import HTTPServer
 from autonoma.gateway.router import GatewayRouter
+from autonoma.gateway.server import GatewayServer
 from autonoma.memory.store import MemoryStore
 from autonoma.cortex.session import SessionManager
 from autonoma.schema import Message
@@ -26,7 +27,7 @@ def register_dashboard_routes(
     memory_store: MemoryStore,
     session_manager: SessionManager,
     gateway_router: GatewayRouter,
-    active_channels: list[str],
+    gateway_server: GatewayServer,
     task_queue=None,
     trace_store=None,
     skill_registry=None,
@@ -40,6 +41,7 @@ def register_dashboard_routes(
             mem_stats = await memory_store.get_stats()
             sessions_list = await session_manager.list_sessions()
             uptime = int(time.time() - _start_time)
+            active_channels = list(gateway_server._channels.keys())
             data = {
                 "uptime_seconds": uptime,
                 "active_channels": active_channels,
@@ -489,6 +491,136 @@ def register_dashboard_routes(
             logger.error("Dashboard POST /api/config error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    # --- Channel endpoints ---
+
+    async def handle_channels(request: dict) -> tuple[int, dict[str, str], str]:
+        """GET /api/channels — return list of channels and their exact health status."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.config import load_config as _load_config
+            cfg = _load_config()
+            ch_cfg = cfg.channels
+            
+            # Map configurations
+            channels_info = {
+                "telegram": {"enabled": ch_cfg.telegram.enabled, "name": "Telegram", "has_credentials": bool(ch_cfg.telegram.bot_token)},
+                "discord": {"enabled": ch_cfg.discord.enabled, "name": "Discord", "has_credentials": bool(ch_cfg.discord.bot_token)},
+                "whatsapp": {"enabled": ch_cfg.whatsapp.enabled, "name": "WhatsApp", "has_credentials": True},  # WhatsApp uses QR
+                "gmail": {"enabled": ch_cfg.gmail.enabled, "name": "Gmail", "has_credentials": bool(ch_cfg.gmail.address and ch_cfg.gmail.app_password)},
+                "rest": {"enabled": ch_cfg.rest.enabled, "name": "REST API", "has_credentials": True},
+            }
+            
+            # Combine with runtime status
+            response_data = []
+            for key, info in channels_info.items():
+                status_block = gateway_server._channel_status.get(key, {"status": "stopped", "last_error": None})
+                if not info["enabled"]:
+                    status_block = {"status": "disabled", "last_error": None}
+                    
+                response_data.append({
+                    "id": key,
+                    "name": info["name"],
+                    "enabled": info["enabled"],
+                    "has_credentials": info["has_credentials"],
+                    "status": status_block.get("status"),
+                    "last_error": status_block.get("last_error"),
+                })
+                
+            return 200, headers, json.dumps(response_data)
+        except Exception as e:
+            logger.error("Dashboard GET /api/channels error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_channel_reconnect(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/channels/{name}/reconnect — force reconnect an active channel."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            path = request.get("path", "")
+            parts = path.strip("/").split("/")
+            if len(parts) < 4:
+                return 400, headers, json.dumps({"error": "Missing channel name"})
+            channel_name = parts[2]
+            
+            if channel_name not in gateway_server._channels:
+                return 400, headers, json.dumps({"error": f"Channel '{channel_name}' is not currently running."})
+                
+            await gateway_server.reconnect_channel(channel_name)
+            return 200, headers, json.dumps({"status": "reconnecting", "channel": channel_name})
+        except Exception as e:
+            logger.error("Dashboard POST /api/channels/reconnect error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+            
+    async def handle_channel_toggle(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/channels/{name}/toggle — enable/disable channel in config."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            path = request.get("path", "")
+            parts = path.strip("/").split("/")
+            if len(parts) < 4:
+                return 400, headers, json.dumps({"error": "Missing channel name"})
+            channel_name = parts[2]
+            
+            data = request.get("json", {})
+            enabled = data.get("enabled", False)
+            
+            import os
+            from pathlib import Path
+            from autonoma.config import save_yaml_config
+            
+            yaml_updates = {"channels": {channel_name: {"enabled": enabled}}}
+            yaml_path = Path("autonoma.yaml")
+            save_yaml_config(yaml_path, yaml_updates)
+            
+            return 200, headers, json.dumps({"status": "ok", "channel": channel_name, "enabled": enabled, "restart_required": True})
+        except Exception as e:
+            logger.error("Dashboard POST /api/channels/toggle error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+            
+    async def handle_channel_credentials(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/channels/{name}/credentials — update credentials in .env."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            path = request.get("path", "")
+            parts = path.strip("/").split("/")
+            if len(parts) < 4:
+                return 400, headers, json.dumps({"error": "Missing channel name"})
+            channel_name = parts[2]
+            
+            data = request.get("json", {})
+            
+            import os
+            from pathlib import Path
+            from dotenv import set_key
+            env_path = Path(".env")
+            env_path.touch(exist_ok=True)
+            
+            if channel_name == "telegram":
+                token = data.get("bot_token")
+                if token:
+                    os.environ["TELEGRAM_BOT_TOKEN"] = token
+                    set_key(str(env_path), "TELEGRAM_BOT_TOKEN", token, quote_mode="always")
+            elif channel_name == "discord":
+                token = data.get("bot_token")
+                if token:
+                    os.environ["DISCORD_BOT_TOKEN"] = token
+                    set_key(str(env_path), "DISCORD_BOT_TOKEN", token, quote_mode="always")
+            elif channel_name == "gmail":
+                address = data.get("address")
+                password = data.get("app_password")
+                if address:
+                    os.environ["GMAIL_ADDRESS"] = address
+                    set_key(str(env_path), "GMAIL_ADDRESS", address, quote_mode="always")
+                if password:
+                    os.environ["GMAIL_APP_PASSWORD"] = password
+                    set_key(str(env_path), "GMAIL_APP_PASSWORD", password, quote_mode="always")
+            else:
+                return 400, headers, json.dumps({"error": f"Credentials update not supported for {channel_name}"})
+                
+            return 200, headers, json.dumps({"status": "ok", "channel": channel_name, "restart_required": True})
+        except Exception as e:
+            logger.error("Dashboard POST /api/channels/credentials error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
     # Register routes
     http_server.add_route("GET", "/api/soul", handle_soul_get)
     http_server.add_route("POST", "/api/soul", handle_soul_update)
@@ -509,8 +641,24 @@ def register_dashboard_routes(
     http_server.add_route("GET", "/api/tasks/stats", handle_task_stats)
     http_server.add_route("DELETE", "/api/tasks", handle_task_cancel)
     http_server.add_route("POST", "/api/system/restart", handle_system_restart)
+    http_server.add_route("GET", "/api/channels", handle_channels)
+    http_server.add_route("POST", "/api/channels/telegram/reconnect", handle_channel_reconnect)
+    http_server.add_route("POST", "/api/channels/discord/reconnect", handle_channel_reconnect)
+    http_server.add_route("POST", "/api/channels/whatsapp/reconnect", handle_channel_reconnect)
+    http_server.add_route("POST", "/api/channels/gmail/reconnect", handle_channel_reconnect)
+    http_server.add_route("POST", "/api/channels/rest/reconnect", handle_channel_reconnect)
+    
+    http_server.add_route("POST", "/api/channels/telegram/toggle", handle_channel_toggle)
+    http_server.add_route("POST", "/api/channels/discord/toggle", handle_channel_toggle)
+    http_server.add_route("POST", "/api/channels/whatsapp/toggle", handle_channel_toggle)
+    http_server.add_route("POST", "/api/channels/gmail/toggle", handle_channel_toggle)
+    http_server.add_route("POST", "/api/channels/rest/toggle", handle_channel_toggle)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 18)
+    http_server.add_route("POST", "/api/channels/telegram/credentials", handle_channel_credentials)
+    http_server.add_route("POST", "/api/channels/discord/credentials", handle_channel_credentials)
+    http_server.add_route("POST", "/api/channels/gmail/credentials", handle_channel_credentials)
+
+    logger.info("Dashboard API routes registered (%d endpoints)", 22)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

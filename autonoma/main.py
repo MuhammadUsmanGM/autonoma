@@ -164,11 +164,10 @@ async def run(
         logger.info("Gmail channel enabled")
 
     # 16. Register dashboard API endpoints
-    active_channels = list(server._channels.keys())
     from autonoma.gateway.channels.dashboard_api import register_dashboard_routes
     register_dashboard_routes(
         http_server, memory_store, session_manager,
-        gateway_router, active_channels,
+        gateway_router, server,
         task_queue=task_queue,
         trace_store=trace_store,
         skill_registry=skill_registry,

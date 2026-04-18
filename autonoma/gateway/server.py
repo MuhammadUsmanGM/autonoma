@@ -33,9 +33,14 @@ class GatewayServer:
         self._channels: dict[str, ChannelAdapter] = {}
         self._ws_server = None
         self._channel_tasks: list[asyncio.Task] = []
+        
+        # Track status per channel for the dashboard
+        # shape: { "channel_name": {"status": "running" | "stopped" | "error", "last_error": str | None} }
+        self._channel_status: dict[str, dict] = {}
 
     def register_channel(self, channel: ChannelAdapter) -> None:
         self._channels[channel.name] = channel
+        self._channel_status[channel.name] = {"status": "stopped", "last_error": None}
         logger.info("Registered channel: %s", channel.name)
 
     async def start(self) -> None:
@@ -58,11 +63,16 @@ class GatewayServer:
 
         # Start all channel adapters
         for channel in self._channels.values():
-            task = asyncio.create_task(
-                self._run_channel(channel),
-                name=f"channel-{channel.name}",
-            )
-            self._channel_tasks.append(task)
+            self._start_channel_task(channel)
+            
+    def _start_channel_task(self, channel: ChannelAdapter) -> None:
+        self._channel_status[channel.name]["status"] = "starting"
+        self._channel_status[channel.name]["last_error"] = None
+        task = asyncio.create_task(
+            self._run_channel(channel),
+            name=f"channel-{channel.name}",
+        )
+        self._channel_tasks.append(task)
 
     async def stop(self) -> None:
         """Shut down all channels and the WebSocket server."""
@@ -90,9 +100,39 @@ class GatewayServer:
     async def _run_channel(self, channel: ChannelAdapter) -> None:
         """Run a channel adapter with error logging so crashes aren't silent."""
         try:
+            self._channel_status[channel.name]["status"] = "running"
             await channel.start(self._router.handle_message)
-        except Exception:
+            self._channel_status[channel.name]["status"] = "stopped"
+        except asyncio.CancelledError:
+            self._channel_status[channel.name]["status"] = "stopped"
+            raise
+        except Exception as e:
+            self._channel_status[channel.name]["status"] = "error"
+            self._channel_status[channel.name]["last_error"] = str(e)
             logger.exception("Channel '%s' crashed", channel.name)
+
+    async def reconnect_channel(self, name: str) -> None:
+        """Force restart a channel (stop and re-start)."""
+        channel = self._channels.get(name)
+        if not channel:
+            raise ValueError(f"Channel {name} not found")
+        
+        # Stop existing
+        try:
+            await channel.stop()
+        except Exception as e:
+            logger.warning(f"Error stopping channel {name} during reconnect: {e}")
+            
+        # Cancel task if running
+        for t in self._channel_tasks:
+            if t.get_name() == f"channel-{name}" and not t.done():
+                t.cancel()
+                
+        # Remove dead tasks from list
+        self._channel_tasks = [t for t in self._channel_tasks if not t.done()]
+        
+        # Start new
+        self._start_channel_task(channel)
 
     async def _handle_ws_connection(self, websocket, path=None) -> None:
         """Handle incoming WebSocket connections (minimal in Phase 1)."""

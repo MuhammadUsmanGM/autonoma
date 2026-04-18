@@ -126,4 +126,13 @@ export interface AppConfig {
   log_level: string
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings'
+export interface ChannelInfo {
+  id: string
+  name: string
+  enabled: boolean
+  has_credentials: boolean
+  status: 'starting' | 'running' | 'stopped' | 'error' | 'disabled'
+  last_error: string | null
+}
+
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels'

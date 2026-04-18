@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell, Globe } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useNotifications } from '../contexts/NotificationsContext'
 import type { Page } from '../types'
@@ -97,6 +97,28 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
                 )}
                 <Sparkles size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
                 <span className="relative z-10">SOUL Editor</span>
+              </button>
+            )
+          })()}
+          
+          {(() => {
+            const active = current === 'channels'
+            return (
+              <button
+                onClick={() => onChange('channels')}
+                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
+                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="active-nav"
+                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <Globe size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+                <span className="relative z-10">Channels</span>
               </button>
             )
           })()}

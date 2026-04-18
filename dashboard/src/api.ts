@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo } from './types'
 
 const BASE = '/api'
 
@@ -86,4 +86,23 @@ export const api = {
   getSkills: () => request<Array<{ name: string; description: string; provider: string }>>('/skills/manifest'),
 
   restartAgent: () => request<{ status: string }>('/system/restart', { method: 'POST' }),
+
+  getChannels: () => request<ChannelInfo[]>('/channels'),
+
+  reconnectChannel: (name: string) => 
+    request<{ status: string; channel: string }>(`/channels/${name}/reconnect`, { method: 'POST' }),
+
+  toggleChannel: (name: string, enabled: boolean) =>
+    request<{ status: string; restart_required: boolean }>(`/channels/${name}/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }),
+
+  updateChannelCredentials: (name: string, data: Record<string, string>) =>
+    request<{ status: string; restart_required: boolean }>(`/channels/${name}/credentials`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
 }

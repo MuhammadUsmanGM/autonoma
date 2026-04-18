@@ -10,6 +10,7 @@ import Traces from './pages/Traces'
 import Settings from './pages/Settings'
 import Tasks from './pages/Tasks'
 import SoulEditor from './pages/SoulEditor'
+import Channels from './pages/Channels'
 import { NotificationsProvider } from './contexts/NotificationsContext'
 import AlertsPanel from './components/AlertsPanel'
 import type { Page } from './types'
@@ -97,6 +98,7 @@ function App() {
               {page === 'settings' && <Settings />}
               {page === 'tasks' && <Tasks />}
               {page === 'soul' && <SoulEditor />}
+              {page === 'channels' && <Channels />}
             </motion.div>
           </AnimatePresence>
         </main>
