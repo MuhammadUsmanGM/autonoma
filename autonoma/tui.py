@@ -613,6 +613,12 @@ class AutonomaTUI:
         self.runner = AgentRunner()
         self.runner.start()
         time.sleep(0.5)
+        self.console.print("[green]✓ Agent restarted.[/]")
+        # Brief dwell so the user actually sees the confirmation before the
+        # next menu frame clears the screen; drain stdin so keys pressed
+        # during the sleep don't get consumed by the menu's next _arrow_select.
+        time.sleep(0.6)
+        self._drain_stdin()
 
     # ----- [S] Status -----
 
@@ -737,12 +743,26 @@ class AutonomaTUI:
         if idx == len(suggestions):
             self._print_banner()
             self.console.print(Rule("[bold]Custom model[/]", style="cyan"))
-            try:
-                model = self.console.input("Model identifier: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                return
-            if not model:
-                return
+            # In forced first-run we re-prompt on empty input instead of
+            # returning — an empty model ID here would throw away the API key
+            # the user just typed, send them back to the main loop with the
+            # agent still unable to start, and _is_first_run would still be
+            # True. Loop until we get something or the user Ctrl+Cs.
+            while True:
+                try:
+                    model = self.console.input("Model identifier: ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    if forced:
+                        raise
+                    return
+                if model:
+                    break
+                if not forced:
+                    return
+                self.console.print(
+                    "[red]A model identifier is required.[/] "
+                    "[dim]Press Ctrl+C to quit instead.[/]"
+                )
         else:
             model = suggestions[idx]
 
