@@ -353,7 +353,7 @@ class AutonomaTUI:
                 title=None,
                 items=[label for label, _ in items],
                 selected=selected,
-                header_renderer=self._render_main_header,
+                header_renderable=self._main_header_renderable,
                 allow_back=False,
             )
             if selected is None or items[selected][1] is None:
@@ -364,9 +364,26 @@ class AutonomaTUI:
                 continue
 
     def _render_main_header(self) -> None:
-        """Banner + compact status panel at top of the main menu."""
-        self._print_banner()
+        """Legacy print-based header (kept for non-Live screens like Status).
+        For menu screens use _main_header_renderable() which returns a Group
+        so Live(screen=True) can update in place without scrollback stacking."""
+        self.console.print(self._main_header_renderable())
 
+    def _banner_renderable(self):
+        """Banner + subtitle as a single renderable (no clear, no print)."""
+        return Group(
+            Align.center(Text(BANNER, style="bold cyan")),
+            Align.center(Text("AI Agent Platform · control panel", style="dim")),
+            Text(""),
+        )
+
+    def _main_header_renderable(self):
+        """Full main-menu header (banner + status panel) as a renderable.
+
+        Returns a Group rather than printing so _arrow_select can hand it
+        to Live(screen=True), which paints into the terminal's alt-screen
+        buffer — no scrollback, no stacked frames on each keypress.
+        """
         cfg = self._safe_load_config()
         runner = self.runner
         status = runner.status() if runner else "stopped"
@@ -405,8 +422,11 @@ class AutonomaTUI:
                 "Dashboard",
                 f"[cyan]http://{cfg.gateway.host}:{cfg.gateway.http_port}[/]",
             )
-        self.console.print(Panel(info, border_style=status_color, title="Autonoma"))
-        self.console.print()
+        return Group(
+            self._banner_renderable(),
+            Panel(info, border_style=status_color, title="Autonoma"),
+            Text(""),
+        )
 
     # ----- [L] Logs viewer -----
 
@@ -549,7 +569,7 @@ class AutonomaTUI:
                         "Channels (enable, disable, configure)",
                         "Back to control tower",
                     ],
-                    header_renderer=self._print_banner,
+                    header_renderable=self._banner_renderable,
                     allow_back=True,
                 )
                 if idx is None or idx == 2:
@@ -770,7 +790,7 @@ class AutonomaTUI:
         idx = self._arrow_select(
             title="[bold]Step 1 of 3 — LLM provider[/]",
             items=[f"{name}  —  {desc}" for name, desc in PROVIDERS],
-            header_renderer=self._print_banner,
+            header_renderable=self._banner_renderable,
             allow_back=not forced,
         )
         if idx is None:
@@ -819,7 +839,7 @@ class AutonomaTUI:
         idx = self._arrow_select(
             title=f"[bold]Step 3 of 3 — Model[/] [dim](provider: {provider})[/]",
             items=options,
-            header_renderer=self._print_banner,
+            header_renderable=self._banner_renderable,
             allow_back=not forced,
         )
         if idx is None:
@@ -872,9 +892,7 @@ class AutonomaTUI:
         channels = list(CHANNEL_ENV.keys())
         selected = 0
         while True:
-            def header():
-                self._print_banner()
-                self.console.print(Rule("[bold]Channels[/]", style="cyan"))
+            def header_renderable():
                 table = Table(show_header=True, header_style="bold cyan", box=None)
                 table.add_column("Channel")
                 table.add_column("Status")
@@ -886,8 +904,12 @@ class AutonomaTUI:
                         "[green]● enabled[/]" if on else "[dim]○ disabled[/]",
                         self._credential_preview(name),
                     )
-                self.console.print(table)
-                self.console.print()
+                return Group(
+                    self._banner_renderable(),
+                    Rule("[bold]Channels[/]", style="cyan"),
+                    table,
+                    Text(""),
+                )
 
             items = [
                 f"{name:<10} — {'disable' if self._channel_enabled(name) else 'enable'} / configure"
@@ -897,7 +919,7 @@ class AutonomaTUI:
                 title=None,
                 items=items,
                 selected=selected,
-                header_renderer=header,
+                header_renderable=header_renderable,
                 allow_back=True,
             )
             if idx is None:
@@ -913,7 +935,7 @@ class AutonomaTUI:
                 "Configure credentials",
                 "Reconnect (clear session & re-auth)",
             ],
-            header_renderer=self._print_banner,
+            header_renderable=self._banner_renderable,
             allow_back=True,
         )
         if idx == 0:
@@ -1094,8 +1116,19 @@ class AutonomaTUI:
         items: list[str],
         selected: int = 0,
         header_renderer=None,
+        header_renderable=None,
         allow_back: bool = True,
     ) -> int | None:
+        """Render an arrow-key menu.
+
+        Prefers `header_renderable` (a zero-arg callable returning a Rich
+        renderable) which drives a Live(screen=True) loop — alt-screen means
+        no scrollback stacking, so the menu updates in place on every key.
+
+        Falls back to the legacy `header_renderer` (print-based) only when
+        no renderable is provided; that path still uses console.clear() and
+        will visibly stack frames on terminals with persistent scrollback.
+        """
         if not items:
             return None
         # Clamp into range. Accepts negative indices (Python-style from the
@@ -1105,6 +1138,20 @@ class AutonomaTUI:
             selected = max(0, len(items) + selected)
         if selected >= len(items):
             selected = 0
+
+        # Preferred path: alt-screen Live rendering.
+        if header_renderable is not None:
+            return self._arrow_select_live(
+                title=title,
+                items=items,
+                selected=selected,
+                header_renderable=header_renderable,
+                allow_back=allow_back,
+            )
+
+        # Legacy path — kept only so we don't have to retrofit every caller
+        # at once. Anything passing header_renderer= still works; it just
+        # won't get the in-place redraw benefit.
         while True:
             self.console.clear()
             if header_renderer:
@@ -1135,6 +1182,66 @@ class AutonomaTUI:
                 selected = (selected + 1) % len(items)
             elif key == KEY_ENTER:
                 return selected
+
+    def _arrow_select_live(
+        self,
+        *,
+        title: str | None,
+        items: list[str],
+        selected: int,
+        header_renderable,
+        allow_back: bool,
+    ) -> int | None:
+        """Alt-screen Live-driven arrow menu. See _arrow_select for docs."""
+        def build_frame() -> Group:
+            parts: list = [header_renderable()]
+            if title:
+                parts.append(Rule(title, style="cyan"))
+                parts.append(Text(""))
+            for i, label in enumerate(items):
+                if i == selected:
+                    parts.append(Text.from_markup(f"  [bold cyan]▶ {label}[/]"))
+                else:
+                    parts.append(Text.from_markup(f"    [dim]{label}[/]"))
+            parts.append(Text(""))
+            hint = "[dim]↑/↓ navigate · Enter select"
+            if allow_back:
+                hint += " · ESC back"
+            hint += " · Ctrl+C quit[/]"
+            parts.append(Text.from_markup(hint))
+            return Group(*parts)
+
+        # refresh_per_second matched to a modest 10Hz — the frame only
+        # repaints on keypress, but Live needs a nonzero rate to cope with
+        # terminal size changes and auto-refresh the renderable if the
+        # header's own state (e.g. running uptime) changes under it.
+        with Live(
+            build_frame(),
+            console=self.console,
+            refresh_per_second=10,
+            screen=True,
+            transient=False,
+        ) as live:
+            while True:
+                key = read_key()
+                if key == KEY_CTRL_C:
+                    # Leaving the Live context first ensures the alt-screen
+                    # is dropped before KeyboardInterrupt propagates, so the
+                    # user's shell history is restored cleanly.
+                    live.stop()
+                    self._drain_stdin()
+                    raise KeyboardInterrupt
+                if key == KEY_ESC and allow_back:
+                    self._drain_stdin()
+                    return None
+                if key == KEY_UP:
+                    selected = (selected - 1) % len(items)
+                elif key == KEY_DOWN:
+                    selected = (selected + 1) % len(items)
+                elif key == KEY_ENTER:
+                    self._drain_stdin()
+                    return selected
+                live.update(build_frame())
 
     def _print_banner(self) -> None:
         self.console.clear()
