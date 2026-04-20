@@ -64,6 +64,13 @@ class WhatsAppChannel(ChannelAdapter):
         # restart would leak a puppeteer process.
         self._bridge_proc: subprocess.Popen | None = None
         self._bridge_log_handle = None
+        # Watchdog task — polls the sidecar and respawns it if the Node
+        # process dies (chromium OOM, puppeteer crash, etc). Populated by
+        # start(), cancelled by stop().
+        self._watchdog_task: asyncio.Task | None = None
+        # Exponential backoff state so a wedged sidecar doesn't chew CPU
+        # in a spawn loop. Reset on every successful up-check.
+        self._restart_attempts = 0
 
     @property
     def name(self) -> str:
@@ -82,11 +89,31 @@ class WhatsAppChannel(ChannelAdapter):
         # that's the user's own bridge and leave it alone.
         if self._config.auto_spawn_bridge:
             await self._ensure_bridge_running()
+            # Watchdog only makes sense for bridges we own. If the user is
+            # running their own (port was already bound), _bridge_proc is
+            # None and the watchdog idles harmlessly — but we still start
+            # it so the port-probe path covers "user's bridge crashed,
+            # we'll take over" scenarios cleanly.
+            self._watchdog_task = asyncio.create_task(
+                self._run_watchdog(), name="whatsapp-bridge-watchdog"
+            )
 
         await self._stop_event.wait()
 
     async def stop(self) -> None:
         self._stop_event.set()
+        # Cancel the watchdog BEFORE we terminate the child, so it doesn't
+        # see the child die and immediately respawn it in the middle of
+        # our shutdown sequence. Awaiting the cancellation is essential —
+        # asyncio doesn't guarantee the task has released the Popen handle
+        # until the CancelledError has propagated.
+        if self._watchdog_task is not None and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
+            try:
+                await self._watchdog_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._watchdog_task = None
         await self._client.aclose()
         # Tear down the spawned bridge (if we own it). Graceful terminate
         # first, kill after 5s if it refuses — puppeteer occasionally
@@ -133,6 +160,113 @@ class WhatsAppChannel(ChannelAdapter):
             pass
 
         await asyncio.to_thread(self._spawn_bridge)
+
+    async def _run_watchdog(self) -> None:
+        """Keep the bridge alive.
+
+        Every 5 s:
+          - If we own a child Popen: check whether it's still running.
+            If not, log the exit code and respawn (with backoff).
+          - If we don't own a child (user's own bridge, port already
+            bound at start): TCP-probe the port. If it's suddenly
+            unreachable, we take over — the user's bridge crashed and
+            we'd rather have a working WhatsApp than spare their config.
+
+        Backoff: 2s, 4s, 8s, capped at 60s. Resets to 0 every time the
+        bridge is confirmed up. Without the cap a wedged chromium binary
+        (e.g. corrupt LocalAuth dir) would push spawn attempts to hours
+        between retries — that's worse than a steady 1/min ping.
+        """
+        max_backoff = 60.0
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.sleep(5.0)
+            except asyncio.CancelledError:
+                raise
+
+            # Don't run health checks after stop() was called — race
+            # between sleep completing and stop() setting the event.
+            if self._stop_event.is_set():
+                return
+
+            if self._bridge_proc is not None:
+                # We own the child — check its exit status.
+                exit_code = self._bridge_proc.poll()
+                if exit_code is None:
+                    # Still running. Reset backoff so the next crash
+                    # (whenever it comes) starts fresh.
+                    self._restart_attempts = 0
+                    continue
+
+                # Process died. Log what we have (exit code is the most
+                # actionable signal for users — puppeteer exits 1 on
+                # session lock, 143 on SIGTERM we didn't send, etc.).
+                logger.warning(
+                    "whatsapp-bridge exited unexpectedly (code=%s, attempt=%d). "
+                    "Respawning. Check bridge.log for details.",
+                    exit_code, self._restart_attempts + 1,
+                )
+                # Alert the dashboard so users notice even if they're
+                # not watching logs. Keep the message short — the full
+                # context is in the Node log.
+                try:
+                    from autonoma.alerts import alert_manager
+                    alert_manager.add_alert(
+                        level="warning",
+                        title="WhatsApp bridge crashed",
+                        message=f"Exit code {exit_code}. Auto-respawning (attempt #{self._restart_attempts + 1}).",
+                        channel="whatsapp",
+                    )
+                except Exception:
+                    # Alerts are best-effort — never let a broken
+                    # subscriber take down the watchdog itself.
+                    pass
+
+                # Clear the dead handle so _spawn_bridge can overwrite it.
+                self._bridge_proc = None
+                if self._bridge_log_handle is not None:
+                    try:
+                        self._bridge_log_handle.close()
+                    except OSError:
+                        pass
+                    self._bridge_log_handle = None
+
+                # Backoff before the respawn so a hard-crashing bridge
+                # doesn't spin. 2^n seconds capped at max_backoff.
+                self._restart_attempts += 1
+                backoff = min(2.0 * (2 ** (self._restart_attempts - 1)), max_backoff)
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
+                    return  # stop() fired during backoff
+                except asyncio.TimeoutError:
+                    pass
+
+                await asyncio.to_thread(self._spawn_bridge)
+                continue
+
+            # We don't own a child (port was bound at start by someone
+            # else's bridge). Probe to see if that bridge is still up.
+            parsed = urlparse(self._config.bridge_url or "http://localhost:3001")
+            host = parsed.hostname or "localhost"
+            port = parsed.port or 3001
+            try:
+                with socket.create_connection((host, port), timeout=1.0):
+                    self._restart_attempts = 0
+                    continue
+            except OSError:
+                # Foreign bridge died. Adopt the port — it's ours now.
+                logger.warning(
+                    "External whatsapp-bridge at %s:%d is down; taking over.",
+                    host, port,
+                )
+                self._restart_attempts += 1
+                backoff = min(2.0 * (2 ** (self._restart_attempts - 1)), max_backoff)
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+                await asyncio.to_thread(self._spawn_bridge)
 
     def _spawn_bridge(self) -> None:
         """Synchronous spawn — called via asyncio.to_thread from start().
