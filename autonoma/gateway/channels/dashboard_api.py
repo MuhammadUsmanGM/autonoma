@@ -629,7 +629,12 @@ def register_dashboard_routes(
             return 500, headers, json.dumps({"error": str(e)})
 
     async def handle_channel_reconnect(request: dict) -> tuple[int, dict[str, str], str]:
-        """POST /api/channels/{name}/reconnect — force reconnect an active channel."""
+        """POST /api/channels/{name}/reconnect — force reconnect an active channel.
+
+        Delegates to ``rebuild_channel`` so reconnects also pick up any
+        credential changes that may have been saved since the channel was
+        first registered.
+        """
         headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
@@ -637,18 +642,25 @@ def register_dashboard_routes(
             if len(parts) < 4:
                 return 400, headers, json.dumps({"error": "Missing channel name"})
             channel_name = parts[2]
-            
+
             if channel_name not in gateway_server._channels:
                 return 400, headers, json.dumps({"error": f"Channel '{channel_name}' is not currently running."})
-                
-            await gateway_server.reconnect_channel(channel_name)
+
+            await gateway_server.rebuild_channel(channel_name)
             return 200, headers, json.dumps({"status": "reconnecting", "channel": channel_name})
         except Exception as e:
             logger.error("Dashboard POST /api/channels/reconnect error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
-            
+
     async def handle_channel_toggle(request: dict) -> tuple[int, dict[str, str], str]:
-        """POST /api/channels/{name}/toggle — enable/disable channel in config."""
+        """POST /api/channels/{name}/toggle — enable/disable channel in config.
+
+        Persists the flag to ``autonoma.yaml`` and then applies the change
+        live: enabling builds + starts the adapter on the spot, disabling
+        stops and deregisters it. Only structural things (gateway port,
+        LLM provider) still need a full process restart — channel toggles
+        no longer do.
+        """
         headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
@@ -656,25 +668,51 @@ def register_dashboard_routes(
             if len(parts) < 4:
                 return 400, headers, json.dumps({"error": "Missing channel name"})
             channel_name = parts[2]
-            
+
             data = request.get("json", {})
-            enabled = data.get("enabled", False)
-            
-            import os
+            enabled = bool(data.get("enabled", False))
+
             from pathlib import Path
             from autonoma.config import save_yaml_config
-            
+
             yaml_updates = {"channels": {channel_name: {"enabled": enabled}}}
             yaml_path = Path("autonoma.yaml")
             save_yaml_config(yaml_path, yaml_updates)
-            
-            return 200, headers, json.dumps({"status": "ok", "channel": channel_name, "enabled": enabled, "restart_required": True})
+
+            # Apply live. rebuild_channel reads fresh config, so the toggle
+            # we just persisted is the source of truth — a now-disabled
+            # channel gets torn down, a newly-enabled one gets built.
+            restart_required = False
+            try:
+                await gateway_server.rebuild_channel(channel_name)
+            except Exception as e:
+                # Fall back to the old "restart required" hint instead of
+                # 500-ing; the config change is already saved to YAML so
+                # the user can recover with a restart.
+                logger.warning(
+                    "Live toggle failed for %s, restart required: %s",
+                    channel_name, e,
+                )
+                restart_required = True
+
+            return 200, headers, json.dumps({
+                "status": "ok",
+                "channel": channel_name,
+                "enabled": enabled,
+                "restart_required": restart_required,
+            })
         except Exception as e:
             logger.error("Dashboard POST /api/channels/toggle error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
-            
+
     async def handle_channel_credentials(request: dict) -> tuple[int, dict[str, str], str]:
-        """POST /api/channels/{name}/credentials — update credentials in .env."""
+        """POST /api/channels/{name}/credentials — update credentials in .env.
+
+        After writing to ``.env`` we rebuild the channel so the new creds
+        take effect immediately. This is the whole point of the live-rebuild
+        flow — saving creds should "just work" without asking the user to
+        bounce the process.
+        """
         headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
@@ -682,15 +720,15 @@ def register_dashboard_routes(
             if len(parts) < 4:
                 return 400, headers, json.dumps({"error": "Missing channel name"})
             channel_name = parts[2]
-            
+
             data = request.get("json", {})
-            
+
             import os
             from pathlib import Path
             from dotenv import set_key
             env_path = Path(".env")
             env_path.touch(exist_ok=True)
-            
+
             if channel_name == "telegram":
                 token = data.get("bot_token")
                 if token:
@@ -712,8 +750,29 @@ def register_dashboard_routes(
                     set_key(str(env_path), "GMAIL_APP_PASSWORD", password, quote_mode="always")
             else:
                 return 400, headers, json.dumps({"error": f"Credentials update not supported for {channel_name}"})
-                
-            return 200, headers, json.dumps({"status": "ok", "channel": channel_name, "restart_required": True})
+
+            # Apply live — only if the channel is currently registered. If
+            # it's disabled in config, saving creds shouldn't silently spin
+            # it up; user must toggle Enable explicitly.
+            restart_required = False
+            applied_live = False
+            if channel_name in gateway_server._channels:
+                try:
+                    await gateway_server.rebuild_channel(channel_name)
+                    applied_live = True
+                except Exception as e:
+                    logger.warning(
+                        "Live credential rebuild failed for %s, restart required: %s",
+                        channel_name, e,
+                    )
+                    restart_required = True
+
+            return 200, headers, json.dumps({
+                "status": "ok",
+                "channel": channel_name,
+                "applied_live": applied_live,
+                "restart_required": restart_required,
+            })
         except Exception as e:
             logger.error("Dashboard POST /api/channels/credentials error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})

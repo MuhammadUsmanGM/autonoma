@@ -100,11 +100,14 @@ export const api = {
     }),
 
   updateChannelCredentials: (name: string, data: Record<string, string>) =>
-    request<{ status: string; restart_required: boolean }>(`/channels/${name}/credentials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }),
+    request<{ status: string; applied_live?: boolean; restart_required: boolean }>(
+      `/channels/${name}/credentials`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+    ),
 
   getLogs: (params: { level?: string; since?: string; q?: string }) => {
     const qs = new URLSearchParams()

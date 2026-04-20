@@ -1016,11 +1016,64 @@ class AutonomaTUI:
             for var in CHANNEL_ENV[name]:
                 self._enable_env(var)
             self._set_channel_enabled_in_yaml(name, True)
-            self.console.print(
-                f"\n[green]✓ {name} credentials rotated. "
-                f"Restart Autonoma to apply.[/]"
-            )
+
+            # If the agent is running, ask it to rebuild the channel in
+            # place so the new credentials take effect immediately — no
+            # restart required. If it's not running, fall back to the old
+            # "restart to apply" message.
+            if self._rebuild_channel_live(name):
+                self.console.print(
+                    f"\n[green]✓ {name} credentials rotated and channel "
+                    f"rebuilt live — no restart needed.[/]"
+                )
+            else:
+                self.console.print(
+                    f"\n[green]✓ {name} credentials rotated. "
+                    f"Restart Autonoma to apply.[/]"
+                )
         self._pause(short=True)
+
+    def _rebuild_channel_live(self, name: str) -> bool:
+        """Ask a running gateway to rebuild `name` with the current .env.
+
+        Returns True on a successful 2xx from the gateway, False otherwise
+        (gateway not running, channel not registered, network blip). Caller
+        uses the return value to decide between "applied live" vs "restart
+        required" messaging — we intentionally don't raise so the TUI never
+        dead-ends if the agent happens to be down.
+        """
+        import json
+        import urllib.error
+        import urllib.request
+
+        cfg = self._safe_load_config()
+        if cfg is None:
+            return False
+        host = cfg.gateway.host or "127.0.0.1"
+        # 127.0.0.1 is more reliable than "0.0.0.0" for client connects on
+        # Windows, which is what the gateway binds to by default.
+        if host in ("0.0.0.0", "::"):
+            host = "127.0.0.1"
+        port = cfg.gateway.http_port
+        url = f"http://{host}:{port}/api/channels/{name}/reconnect"
+
+        req = urllib.request.Request(
+            url,
+            data=b"{}",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                return 200 <= resp.getcode() < 300
+        except urllib.error.HTTPError:
+            # 400 means the channel isn't currently registered — treat as
+            # "can't apply live", not an error. Anything else is a real
+            # failure we want the fallback path to surface.
+            return False
+        except (urllib.error.URLError, OSError, json.JSONDecodeError):
+            # Gateway not running or unreachable — fall back to restart hint.
+            return False
 
     def _show_whatsapp_qr(self) -> None:
         """Poll the local whatsapp-web.js bridge for its latest QR and render it.

@@ -60,15 +60,24 @@ export default function Channels() {
   const handleToggle = async (channel: ChannelInfo) => {
     try {
       const res = await api.toggleChannel(channel.id, !channel.enabled)
-      toast.success(`${channel.name} ${!channel.enabled ? 'enabled' : 'disabled'} in config.`, {
-        action: res.restart_required ? {
-          label: 'Restart Required',
-          onClick: async () => {
-            await api.restartAgent()
-            setTimeout(() => window.location.reload(), 3000)
-          }
-        } : undefined
-      })
+      const verb = !channel.enabled ? 'enabled' : 'disabled'
+      // Backend now applies toggles live via gateway_server.rebuild_channel.
+      // Only surface the "Restart Required" escape hatch if the backend
+      // tells us the live rebuild failed — in the happy path this is just
+      // a clean success toast, no user action required.
+      if (res.restart_required) {
+        toast.success(`${channel.name} ${verb} — restart required to apply.`, {
+          action: {
+            label: 'Restart Now',
+            onClick: async () => {
+              await api.restartAgent()
+              setTimeout(() => window.location.reload(), 3000)
+            },
+          },
+        })
+      } else {
+        toast.success(`${channel.name} ${verb}.`)
+      }
       await loadChannels()
     } catch (e: any) {
       toast.error(`Failed to toggle ${channel.name}: ${e.message}`)
@@ -98,17 +107,29 @@ export default function Channels() {
     if (!showModal) return
     try {
       const res = await api.updateChannelCredentials(showModal, creds)
-      toast.success(`Credentials updated for ${showModal}.`, {
-        action: res.restart_required ? {
-          label: 'Restart Required',
-          onClick: async () => {
-            await api.restartAgent()
-            setTimeout(() => window.location.reload(), 3000)
-          }
-        } : undefined
-      })
+      // Live-rebuild is the happy path — backend restarts the channel with
+      // the new credentials in place, so the user just sees "applied" and
+      // we refetch so the status badge flips to running. Only fall back to
+      // the restart prompt if the backend couldn't apply live (e.g. the
+      // channel is currently disabled, so there's nothing to rebuild).
+      if (res.applied_live) {
+        toast.success(`Credentials applied to ${showModal} — reconnecting…`)
+      } else if (res.restart_required) {
+        toast.success(`Credentials saved for ${showModal} — restart to apply.`, {
+          action: {
+            label: 'Restart Now',
+            onClick: async () => {
+              await api.restartAgent()
+              setTimeout(() => window.location.reload(), 3000)
+            },
+          },
+        })
+      } else {
+        toast.success(`Credentials saved for ${showModal}.`)
+      }
       setShowModal(null)
       setCreds({})
+      await loadChannels()
     } catch (err: any) {
       toast.error(`Failed to update credentials: ${err.message}`)
     }
