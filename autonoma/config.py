@@ -43,6 +43,16 @@ class WhatsAppConfig:
     bridge_url: str = "http://localhost:3001"
     webhook_path: str = "/webhook/whatsapp"
     enabled: bool = False
+    # When true, the WhatsApp adapter auto-spawns the whatsapp-bridge Node
+    # sidecar on start() and stops it on shutdown. Users running their own
+    # bridge (e.g. on a remote host, or via PM2/systemd) can set this to
+    # false to keep the old BYO-bridge behavior.
+    auto_spawn_bridge: bool = True
+    # Where to find whatsapp-bridge/. Default is <repo-root>/whatsapp-bridge
+    # relative to the autonoma package; override if the sidecar lives
+    # elsewhere (e.g. an npm-installed Autonoma with the bridge vendored
+    # at a different path).
+    bridge_dir: str = ""
 
 
 @dataclass

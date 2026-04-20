@@ -17,6 +17,7 @@ from rich.align import Align
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
+from rich.prompt import Confirm
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
@@ -1078,27 +1079,46 @@ class AutonomaTUI:
     def _show_whatsapp_qr(self) -> None:
         """Poll the local whatsapp-web.js bridge for its latest QR and render it.
 
-        The bridge caches the most recent QR emitted by whatsapp-web.js and
-        serves it via GET /qr. We poll for up to ~30s because the bridge
-        needs a beat to spin up puppeteer after the agent restarts; after
-        that we fall back to a "check bridge logs" hint so the user isn't
-        stranded if the bridge process died."""
+        The bridge is a separate Node sidecar that the user (or the agent
+        process via run_in_background) has to start. If it's not reachable
+        we bail fast with an explicit hint + an option to auto-spawn the
+        sidecar from here — otherwise users are left staring at a silent
+        spinner for 30 s wondering whether anything is happening.
+        """
         import json
+        import socket
         import urllib.error
+        import urllib.parse
         import urllib.request
         from rich.panel import Panel
 
         bridge_url = (os.getenv("WHATSAPP_BRIDGE_URL") or "http://localhost:3001").rstrip("/")
         qr_url = f"{bridge_url}/qr"
 
+        # Fast TCP probe first — if the port is closed there's no point
+        # polling for 30 s. Users reported the TUI hanging here because
+        # they hadn't started the bridge yet, and the silent wait looked
+        # like the UI was frozen.
+        parsed = urllib.parse.urlparse(bridge_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or (443 if parsed.scheme == "https" else 3001)
+        try:
+            with socket.create_connection((host, port), timeout=1.0):
+                bridge_up = True
+        except OSError:
+            bridge_up = False
+
+        if not bridge_up:
+            self._bridge_unreachable_prompt(bridge_url)
+            return
+
         self.console.print(
-            f"\n[dim]Asking bridge at {bridge_url} for a fresh QR "
-            "(give it a few seconds to initialize)…[/]"
+            f"\n[dim]Bridge is up at {bridge_url} — waiting for a fresh QR "
+            "(puppeteer takes a few seconds to warm up)…[/]"
         )
 
-        # The bridge may still be starting — poll gently. 15 attempts × 2s
-        # gives a 30s budget, which is comfortably longer than puppeteer's
-        # usual cold start. We abort early on any 200 with a QR.
+        # Poll gently. 15 attempts × 2s = 30 s budget, longer than puppeteer's
+        # usual cold start. Abort early on any 200 with a QR.
         deadline_attempts = 15
         last_error: str | None = None
         for attempt in range(deadline_attempts):
@@ -1125,26 +1145,146 @@ class AutonomaTUI:
                     )
                     return
                 last_error = payload.get("message") or f"bridge responded {status_code}"
+            except urllib.error.HTTPError as e:
+                # 404 during warmup is normal — bridge is up but puppeteer
+                # hasn't emitted a QR yet. Keep polling.
+                if e.code == 404:
+                    last_error = "bridge has not emitted a QR yet"
+                else:
+                    last_error = f"bridge returned HTTP {e.code}"
             except urllib.error.URLError as e:
                 last_error = f"bridge unreachable: {e.reason}"
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = f"bad bridge response: {e}"
             except Exception as e:  # pragma: no cover — defensive
                 last_error = str(e)
+            # Show a heartbeat so the user doesn't think we're frozen.
+            self.console.print(
+                f"[dim]  · attempt {attempt + 1}/{deadline_attempts}: {last_error}[/]"
+            )
             time.sleep(2.0)
 
         # Fell through the polling budget — tell the user what to do next.
         self.console.print(
             Panel(
-                f"[yellow]Could not fetch a QR from the bridge.[/]\n"
+                f"[yellow]Bridge is reachable but did not emit a QR within 30s.[/]\n"
                 f"[dim]Last error: {last_error or 'timeout'}[/]\n\n"
-                "Check that the whatsapp-bridge sidecar is running "
-                "([cyan]npm start[/] in [cyan]whatsapp-bridge/[/]) and that "
-                f"[cyan]{bridge_url}[/] is reachable. Once it's up, re-run "
-                "Reconnect and the QR will appear here.",
+                "This usually means puppeteer is still booting or the bridge "
+                "is stuck. Check the bridge's own log window — whatsapp-web.js "
+                "prints the QR payload there. Close this panel and re-run "
+                "Reconnect once the bridge has settled.",
                 title="WhatsApp QR",
                 border_style="yellow",
             )
+        )
+
+    def _bridge_unreachable_prompt(self, bridge_url: str) -> None:
+        """Explain that the bridge sidecar isn't running and offer to start it.
+
+        Called by _show_whatsapp_qr when the TCP probe fails. The bridge is
+        a Node sidecar under whatsapp-bridge/ — `npm start` in that dir
+        spawns it. We try to auto-spawn it here so the user doesn't have
+        to juggle a second terminal.
+        """
+        import shutil
+        import subprocess
+        from rich.panel import Panel
+
+        bridge_dir = self.workspace / "whatsapp-bridge"
+        has_bridge_dir = bridge_dir.exists() and (bridge_dir / "package.json").exists()
+        has_node_modules = has_bridge_dir and (bridge_dir / "node_modules").exists()
+
+        lines = [
+            f"[yellow]The WhatsApp bridge at {bridge_url} is not running.[/]",
+            "",
+            "The bridge is a separate Node sidecar that speaks to WhatsApp "
+            "Web via puppeteer. It must be running for QR scanning and "
+            "message send/receive to work.",
+        ]
+        if not has_bridge_dir:
+            lines.append(
+                f"\n[red]No bridge found at {bridge_dir}.[/] "
+                "Reinstall Autonoma with the whatsapp-bridge/ folder in place."
+            )
+            self.console.print(Panel("\n".join(lines), title="WhatsApp bridge", border_style="yellow"))
+            return
+
+        if not has_node_modules:
+            lines.append(
+                f"\n[yellow]node_modules/ is missing.[/] Run [cyan]npm install[/] in "
+                f"[cyan]{bridge_dir}[/] first, then retry Reconnect."
+            )
+            self.console.print(Panel("\n".join(lines), title="WhatsApp bridge", border_style="yellow"))
+            return
+
+        lines.append(
+            f"\nTo start it manually: [cyan]cd {bridge_dir} && npm start[/]"
+        )
+        self.console.print(Panel("\n".join(lines), title="WhatsApp bridge", border_style="yellow"))
+
+        # Offer to spawn it for them. Detached on Windows so it survives
+        # the TUI closing; on POSIX we start a new session for the same
+        # reason. stdout/stderr go to a log file the user can tail.
+        if not Confirm.ask(
+            "\n[bold]Start the bridge sidecar now?[/]",
+            default=True,
+            console=self.console,
+        ):
+            return
+
+        npm = shutil.which("npm") or shutil.which("npm.cmd")
+        if not npm:
+            self.console.print(
+                "[red]Could not find `npm` on PATH. Install Node.js "
+                "(https://nodejs.org) and try again.[/]"
+            )
+            return
+
+        log_path = bridge_dir / "bridge.log"
+        try:
+            log_handle = open(log_path, "a", buffering=1, encoding="utf-8")
+            log_handle.write(f"\n\n=== Bridge spawned by TUI at {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+            log_handle.flush()
+            kwargs: dict = {
+                "cwd": str(bridge_dir),
+                "stdout": log_handle,
+                "stderr": subprocess.STDOUT,
+                "stdin": subprocess.DEVNULL,
+            }
+            if os.name == "nt":
+                # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP so the child
+                # outlives the TUI and doesn't share its console.
+                kwargs["creationflags"] = 0x00000008 | 0x00000200  # type: ignore[assignment]
+            else:
+                kwargs["start_new_session"] = True
+            subprocess.Popen([npm, "start"], **kwargs)  # noqa: S603
+        except OSError as e:
+            self.console.print(f"[red]Failed to spawn bridge:[/] {e}")
+            return
+
+        self.console.print(
+            f"[green]✓ Bridge starting in the background.[/] "
+            f"[dim]Log: {log_path}[/]\n"
+            "[dim]Give it ~10 s to initialize, then continue…[/]"
+        )
+        # Wait for the port to come up, then try again once. If it still
+        # isn't up after 15 s, give up rather than recursing forever.
+        import socket as _socket
+        import urllib.parse as _urlparse
+        parsed = _urlparse.urlparse(bridge_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 3001
+        for _ in range(30):  # 30 × 0.5 s = 15 s
+            try:
+                with _socket.create_connection((host, port), timeout=0.5):
+                    self.console.print("[green]✓ Bridge is up. Fetching QR…[/]")
+                    self._show_whatsapp_qr()
+                    return
+            except OSError:
+                time.sleep(0.5)
+        self.console.print(
+            "[yellow]Bridge didn't come online within 15s. Check "
+            f"{log_path} for errors.[/]"
         )
 
     def _render_qr_panel(self, qr_string: str, age_seconds: int | None) -> None:
