@@ -751,6 +751,28 @@ def register_dashboard_routes(
                 if token:
                     os.environ["TELEGRAM_BOT_TOKEN"] = token
                     set_key(str(env_path), "TELEGRAM_BOT_TOKEN", token, quote_mode="always")
+                # proxy_url is optional — clients send an empty string to clear
+                # an existing proxy, so we treat ``None`` as "not specified" but
+                # explicit "" as "remove". Writing to both .env (env-var override
+                # path) and autonoma.yaml (permanent config) keeps the two
+                # sources in sync so a restart doesn't revert the change.
+                if "proxy_url" in data:
+                    proxy_url = (data.get("proxy_url") or "").strip()
+                    if proxy_url:
+                        os.environ["TELEGRAM_PROXY_URL"] = proxy_url
+                        set_key(str(env_path), "TELEGRAM_PROXY_URL", proxy_url, quote_mode="always")
+                    else:
+                        os.environ.pop("TELEGRAM_PROXY_URL", None)
+                        # dotenv has no "unset" — set empty so load_config sees ""
+                        set_key(str(env_path), "TELEGRAM_PROXY_URL", "", quote_mode="always")
+                    try:
+                        from autonoma.config import save_yaml_config
+                        save_yaml_config(
+                            "autonoma.yaml",
+                            {"channels": {"telegram": {"proxy_url": proxy_url}}},
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to persist proxy_url to YAML: %s", e)
             elif channel_name == "discord":
                 token = data.get("bot_token")
                 if token:
