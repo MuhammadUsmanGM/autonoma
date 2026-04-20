@@ -226,9 +226,23 @@ def register_dashboard_routes(
                 content=content,
             )
             response = await gateway_router.handle_message(message)
+            # Look up the real session_id the agent just created/reused for this
+            # channel_id. We can't return channel_id here — that's "dashboard",
+            # not the timestamped "dashboard_20260420_..._abc123" that the
+            # session file is actually stored under. Without this the UI can
+            # never rehydrate history on reload/navigation.
+            resolved_session_id = channel_id
+            try:
+                agent = gateway_router._agent_router._agents.get(
+                    gateway_router._agent_router._default or ""
+                )
+                if agent and channel_id in agent._active_sessions:
+                    resolved_session_id = agent._active_sessions[channel_id]
+            except Exception:  # pragma: no cover — never let lookup break chat
+                pass
             return 200, headers, json.dumps({
                 "response": response.content,
-                "session_id": channel_id,
+                "session_id": resolved_session_id,
             })
         except Exception as e:
             logger.error("Dashboard /api/chat error: %s", e)

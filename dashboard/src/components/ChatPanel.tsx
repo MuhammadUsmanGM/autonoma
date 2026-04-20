@@ -1,19 +1,86 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Loader2, User, Bot, Sparkles } from 'lucide-react'
+import { Send, Loader2, User, Bot, Sparkles, Trash2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../api'
 import type { ChatMessage } from '../types'
+
+// Persist the dashboard chat session across page navigation AND browser reloads
+// so users don't lose context when they flip to Settings and back. The session
+// id is stable per-browser; the message history is reloaded from the backend
+// on mount (single source of truth — we never trust a stale local cache).
+const SESSION_STORAGE_KEY = 'autonoma.chat.sessionId'
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [sessionId, setSessionId] = useState<string>()
+  const [hydrating, setHydrating] = useState(true)
+  const [sessionId, setSessionId] = useState<string | undefined>(() => {
+    try {
+      return localStorage.getItem(SESSION_STORAGE_KEY) || undefined
+    } catch {
+      return undefined
+    }
+  })
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // On mount: if we remember a session from a previous visit, pull its history
+  // from the backend and replay it into the UI. Failure modes handled:
+  //   - 404 (session was deleted server-side) → clear local id, start fresh
+  //   - any other error → keep the id, show empty list (user can keep chatting)
+  useEffect(() => {
+    let cancelled = false
+    const rehydrate = async () => {
+      if (!sessionId) {
+        setHydrating(false)
+        return
+      }
+      try {
+        const detail = await api.getSessionDetail(sessionId)
+        if (cancelled) return
+        const restored: ChatMessage[] = detail.messages
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            timestamp: m.timestamp,
+          }))
+        setMessages(restored)
+      } catch (e: any) {
+        // Session gone from the server? Drop the stale id so the next send
+        // creates a new one instead of aiming at a dead handle.
+        if (String(e?.message || '').includes('404')) {
+          try { localStorage.removeItem(SESSION_STORAGE_KEY) } catch { /* noop */ }
+          setSessionId(undefined)
+        }
+      } finally {
+        if (!cancelled) setHydrating(false)
+      }
+    }
+    rehydrate()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // run once on mount; sessionId changes are handled explicitly elsewhere
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Mirror sessionId to localStorage so a reload picks up where we left off.
+  useEffect(() => {
+    try {
+      if (sessionId) localStorage.setItem(SESSION_STORAGE_KEY, sessionId)
+      else localStorage.removeItem(SESSION_STORAGE_KEY)
+    } catch { /* storage disabled — fall back to in-memory only */ }
+  }, [sessionId])
+
+  const clearChat = () => {
+    // "New conversation" — wipe the local view and forget the session id.
+    // The backend's JSONL stays on disk (users can find it via Sessions page
+    // if they need it); we just stop following it from this panel.
+    setMessages([])
+    setSessionId(undefined)
+  }
 
   const send = async () => {
     const text = input.trim()
@@ -51,10 +118,31 @@ export default function ChatPanel() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Top bar — shows hydration status + a "new conversation" escape hatch
+          so users can reset the stored session on purpose. Hidden when empty
+          so the first-run welcome stays clean. */}
+      {(messages.length > 0 || hydrating) && (
+        <div className="flex items-center justify-between px-6 pt-4 pb-2 shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">
+            {hydrating ? 'Restoring session…' : sessionId ? 'Session active' : 'New conversation'}
+          </span>
+          {messages.length > 0 && !hydrating && (
+            <button
+              onClick={clearChat}
+              className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] hover:text-[var(--error)] transition-colors cursor-pointer"
+              title="Start a new conversation (history stays on disk)"
+            >
+              <Trash2 size={10} />
+              New chat
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide min-w-0">
         <AnimatePresence initial={false}>
-          {messages.length === 0 && (
+          {messages.length === 0 && !hydrating && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
