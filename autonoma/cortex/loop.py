@@ -233,10 +233,32 @@ class AgentLoop:
         *,
         tools: list[dict] | None = None,
     ) -> LLMResponse:
-        """Stage 4: Call the LLM provider."""
-        return await self._provider.chat(
+        """Stage 4: Call the LLM provider, then bill the live trace."""
+        response = await self._provider.chat(
             messages, system_prompt=system_prompt, tools=tools
         )
+        self._record_usage(response)
+        return response
+
+    def _record_usage(self, response: LLMResponse) -> None:
+        """Fold one LLM call's token usage + cost into the active trace.
+
+        Intentionally defensive: if the provider didn't return usage, if no
+        live trace is attached, or if the pricing lookup fails, we silently
+        skip. Cost tracking is an observability nice-to-have — it must never
+        take down the loop."""
+        live = getattr(self, "_current_live_trace", None)
+        if not live or not response.usage:
+            return
+        try:
+            from autonoma.models.pricing import cost_for
+            model = response.model or getattr(self._provider, "_model", "")
+            tin = int(response.usage.get("input_tokens", 0) or 0)
+            tout = int(response.usage.get("output_tokens", 0) or 0)
+            cost = cost_for(model, tin, tout)
+            live.add_usage(tin, tout, cost, model=model)
+        except Exception as e:  # pragma: no cover — advisory only
+            logger.debug("Cost tracking skipped: %s", e)
 
     def _build_assistant_content(self, response: LLMResponse) -> list[dict]:
         """Build Anthropic-format assistant content from LLMResponse."""

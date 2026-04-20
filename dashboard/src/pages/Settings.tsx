@@ -6,6 +6,7 @@ import { api } from '../api'
 import Skeleton from '../components/Skeleton'
 import Dropdown from '../components/Dropdown'
 import ProxyHealthCard from '../components/ProxyHealthCard'
+import UsageCostsCard from '../components/UsageCostsCard'
 import type { AppConfig } from '../types'
 
 const PROVIDERS = [
@@ -358,6 +359,12 @@ export default function Settings() {
           </div>
         </motion.div>
       </div>
+
+      {/* Usage & costs — full-width, self-contained. Sits directly after the
+          LLM config so operators see "what I picked" and "what it costs me"
+          together. This is the single most-asked question once an agent is
+          actually running in production. */}
+      <UsageCostsCard />
 
       {/* Proxy health — full width, self-contained. Lives here rather than on
           its own page so operators see it alongside the LLM/API-key config

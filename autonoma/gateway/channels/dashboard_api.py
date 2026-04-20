@@ -290,6 +290,23 @@ def register_dashboard_routes(
         except Exception as e:
             return 500, headers, json.dumps({"error": str(e)})
 
+    async def handle_usage(request: dict) -> tuple[int, dict[str, str], str]:
+        """Token + USD spend rollup for the Settings → Usage & Costs card."""
+        headers = {"Content-Type": "application/json"}
+        if not trace_store:
+            return 200, headers, json.dumps({
+                "today": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "calls": 0},
+                "week": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "calls": 0},
+                "month": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "calls": 0},
+                "total": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "calls": 0},
+                "by_model": {},
+            })
+        try:
+            return 200, headers, json.dumps(trace_store.get_usage_stats())
+        except Exception as e:
+            logger.error("Dashboard /api/usage error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
     # --- Task queue endpoints ---
 
     async def handle_tasks(request: dict) -> tuple[int, dict[str, str], str]:
@@ -1021,6 +1038,7 @@ def register_dashboard_routes(
     http_server.add_route("POST", "/api/chat", handle_chat)
     http_server.add_route("GET", "/api/traces", handle_traces)
     http_server.add_route("GET", "/api/traces/stats", handle_trace_stats)
+    http_server.add_route("GET", "/api/usage", handle_usage)
     http_server.add_route("GET", "/api/tasks", handle_tasks)
     http_server.add_route("GET", "/api/tasks/stats", handle_task_stats)
     http_server.add_route("DELETE", "/api/tasks", handle_task_cancel)

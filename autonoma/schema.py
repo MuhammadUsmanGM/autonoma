@@ -73,6 +73,8 @@ class LLMResponse:
 
     content: list[ContentBlock]
     stop_reason: str  # "end_turn", "tool_use", "max_tokens", "stop"
+    usage: dict[str, int] | None = None  # {"input_tokens": N, "output_tokens": N}
+    model: str = ""  # model slug the provider actually answered with
 
     @property
     def text(self) -> str:

@@ -74,6 +74,21 @@ export interface TraceStats {
   avg_elapsed_seconds: number
 }
 
+export interface UsageBucket {
+  tokens_in: number
+  tokens_out: number
+  cost_usd: number
+  calls: number
+}
+
+export interface UsageStats {
+  today: UsageBucket
+  week: UsageBucket
+  month: UsageBucket
+  total: UsageBucket
+  by_model: Record<string, UsageBucket>
+}
+
 export interface TaskItem {
   id: string
   name: string

@@ -88,4 +88,20 @@ class AnthropicProvider(LLMProvider):
                 tc = ToolCall(id=block.id, name=block.name, input=block.input)
                 blocks.append(ContentBlock(type="tool_use", tool_call=tc))
 
-        return LLMResponse(content=blocks, stop_reason=response.stop_reason)
+        # Usage comes back as a typed Usage object on the SDK response; we
+        # defensively getattr so older SDKs (or mocks in tests) without the
+        # attribute still work.
+        usage: dict[str, int] | None = None
+        raw_usage = getattr(response, "usage", None)
+        if raw_usage is not None:
+            usage = {
+                "input_tokens": int(getattr(raw_usage, "input_tokens", 0) or 0),
+                "output_tokens": int(getattr(raw_usage, "output_tokens", 0) or 0),
+            }
+
+        return LLMResponse(
+            content=blocks,
+            stop_reason=response.stop_reason,
+            usage=usage,
+            model=getattr(response, "model", "") or self._model,
+        )

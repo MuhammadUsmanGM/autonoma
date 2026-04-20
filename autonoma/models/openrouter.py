@@ -239,4 +239,19 @@ class OpenRouterProvider(LLMProvider):
         elif tool_calls:
             stop_reason = "tool_use"
 
-        return LLMResponse(content=blocks, stop_reason=stop_reason)
+        # Extract token usage. OpenRouter returns OpenAI-format
+        # ``{"usage": {"prompt_tokens": N, "completion_tokens": N, ...}}``.
+        usage: dict[str, int] | None = None
+        raw_usage = data.get("usage") or {}
+        if raw_usage:
+            usage = {
+                "input_tokens": int(raw_usage.get("prompt_tokens", 0) or 0),
+                "output_tokens": int(raw_usage.get("completion_tokens", 0) or 0),
+            }
+
+        return LLMResponse(
+            content=blocks,
+            stop_reason=stop_reason,
+            usage=usage,
+            model=data.get("model") or self._model,
+        )

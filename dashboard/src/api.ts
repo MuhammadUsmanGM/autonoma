@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest, ProxyHealth } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, UsageStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest, ProxyHealth } from './types'
 
 const BASE = '/api'
 
@@ -41,6 +41,8 @@ export const api = {
   getTrace: (id: string) => request<TraceItem>(`/traces/${id}`),
 
   getTraceStats: () => request<TraceStats>('/traces/stats'),
+
+  getUsage: () => request<UsageStats>('/usage'),
 
   getTasks: () => request<TaskItem[]>('/tasks'),
 
