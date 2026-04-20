@@ -831,24 +831,59 @@ def register_dashboard_routes(
         return 200, headers, json.dumps({"status": "ok"})
 
     async def handle_task_create(request: dict) -> tuple[int, dict[str, str], str]:
+        """POST /api/tasks — submit a one-shot or cron-scheduled task.
+
+        Body::
+            {
+              "name": "Morning Gmail digest",
+              "skill": "agent_prompt",       # handler name registered in main.py
+              "args": {"prompt": "check my Gmail and summarize new emails to WhatsApp"},
+              "priority": 2,                 # 0=critical..3=background
+              "cron": "0 8 * * *"            # optional; when set, task recurs
+            }
+        """
         headers = {"Content-Type": "application/json"}
         if not task_queue:
             return 404, headers, json.dumps({"error": "Task queue not found"})
         try:
             data = request.get("json", {})
             name = data.get("name", "Dashboard Task")
-            skill = data.get("skill")
-            args = data.get("args", {})
+            skill = data.get("skill") or "agent_prompt"
+            args = data.get("args") or {}
+            # Accept ``prompt`` as a convenience alongside the full args dict
+            # so the dashboard "Schedule" form doesn't have to nest it.
+            if "prompt" in data and "prompt" not in args:
+                args["prompt"] = data["prompt"]
             priority = int(data.get("priority", 2))
-            
-            if not skill:
-                return 400, headers, json.dumps({"error": "Missing skill field"})
-            
-            from autonoma.cortex.task import Task
-            task = Task(name=name, skill=skill, args=args, priority=priority)
-            task_queue.enqueue(task)
-            return 200, headers, json.dumps({"status": "enqueued", "id": task.id})
+            cron = (data.get("cron") or "").strip() or None
+
+            if cron:
+                from autonoma.executor.cron import validate as validate_cron
+                err = validate_cron(cron)
+                if err:
+                    return 400, headers, json.dumps(
+                        {"error": f"Invalid cron expression: {err}"}
+                    )
+
+            from autonoma.executor.task_queue import Priority as _P
+            try:
+                priority_enum = _P(priority)
+            except ValueError:
+                priority_enum = _P.NORMAL
+
+            task_id = await task_queue.submit(
+                name=skill,
+                payload={"_display_name": name, **args},
+                priority=priority_enum,
+                cron=cron,
+            )
+            return 200, headers, json.dumps({
+                "status": "scheduled" if cron else "enqueued",
+                "id": task_id,
+                "cron": cron,
+            })
         except Exception as e:
+            logger.error("Dashboard /api/tasks POST error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
     async def handle_memory_consolidate(request: dict) -> tuple[int, dict[str, str], str]:

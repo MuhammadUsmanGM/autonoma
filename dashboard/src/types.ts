@@ -93,9 +93,13 @@ export interface TaskItem {
   id: string
   name: string
   priority: number
-  skill: string
-  args: Record<string, any>
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  // Server-side TaskItem stores a ``payload`` dict, not ``skill`` + ``args``.
+  // Older handlers used skill/args; both are optional on the wire so the UI
+  // can render either shape without exploding.
+  payload?: Record<string, any>
+  skill?: string
+  args?: Record<string, any>
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'scheduled'
   created_at: string
   started_at: string | null
   completed_at: string | null
@@ -103,6 +107,11 @@ export interface TaskItem {
   error: string | null
   retries: number
   max_retries: number
+  // Cron fields — present when this is a recurring scheduled task.
+  cron?: string | null
+  next_run_at?: string | null
+  last_run_at?: string | null
+  run_count?: number
 }
 
 export interface TaskStats {
@@ -112,6 +121,7 @@ export interface TaskStats {
   completed: number
   failed: number
   cancelled: number
+  scheduled?: number
 }
 
 export interface AppConfig {

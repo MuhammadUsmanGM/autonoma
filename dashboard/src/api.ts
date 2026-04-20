@@ -138,8 +138,15 @@ export const api = {
 
   getTask: (id: string) => request<TaskItem>(`/tasks/${id}`),
 
-  createTask: (data: { name: string; skill: string; args: any; priority?: number }) =>
-    request<{ status: string; id: string }>('/tasks', {
+  createTask: (data: {
+    name: string
+    skill?: string
+    args?: any
+    prompt?: string
+    priority?: number
+    cron?: string | null
+  }) =>
+    request<{ status: string; id: string; cron?: string | null }>('/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),

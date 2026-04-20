@@ -177,6 +177,30 @@ async def run(
         agent_runner=agent_runner,
     )
 
+    # 16b. Register task handlers. ``agent_prompt`` is the default skill for
+    # scheduled jobs: payload["prompt"] is fed into the agent loop exactly as
+    # if a user had sent it on a dedicated channel, so cron tasks can say
+    # things like "check my Gmail and summarize new emails to WhatsApp" and
+    # the full tool-using loop answers them.
+    async def _agent_prompt_handler(payload: dict) -> str:
+        prompt = payload.get("prompt") or ""
+        if not prompt:
+            raise ValueError("agent_prompt task requires payload.prompt")
+        from autonoma.schema import Message
+        channel = payload.get("channel", "scheduler")
+        channel_id = payload.get("channel_id", f"scheduler:{channel}")
+        user_id = payload.get("user_id", "scheduler")
+        msg = Message(
+            channel=channel,
+            channel_id=channel_id,
+            user_id=user_id,
+            content=prompt,
+        )
+        response = await agent.handle_message(msg)
+        return response.content[:2000] if response.content else ""
+
+    task_queue.register_handler("agent_prompt", _agent_prompt_handler)
+
     # 17. Start everything
     consolidation_interval = config.memory.decay_interval if config.memory.consolidation_enabled else 0
     async with MemoryFlusher(memory_store, consolidation_interval=consolidation_interval):

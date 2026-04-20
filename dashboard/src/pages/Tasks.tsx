@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { ListTodo, RefreshCw, XCircle, Clock, CheckCircle2, AlertTriangle, Loader2, Plus, ChevronRight } from 'lucide-react'
+import { ListTodo, RefreshCw, XCircle, Clock, CheckCircle2, AlertTriangle, Loader2, Plus, ChevronRight, CalendarClock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { api } from '../api'
@@ -14,6 +14,34 @@ const STATUS_CONFIG: Record<string, { color: string; icon: typeof CheckCircle2; 
   completed: { color: 'text-[var(--success)]', icon: CheckCircle2, label: 'DONE' },
   failed: { color: 'text-[var(--error)]', icon: AlertTriangle, label: 'FAILED' },
   cancelled: { color: 'text-white/30', icon: XCircle, label: 'CANCELLED' },
+  scheduled: { color: 'text-sky-400', icon: CalendarClock, label: 'SCHEDULED' },
+}
+
+// Common cron presets. Picked for the "digital employee" use-cases that
+// motivated this feature — daily morning summary, hourly polling, weekday
+// mornings — rather than an exhaustive list. Custom strings still work.
+const CRON_PRESETS: { label: string; value: string; hint: string }[] = [
+  { label: 'Every morning at 8:00', value: '0 8 * * *', hint: 'Daily 08:00 UTC' },
+  { label: 'Weekday mornings at 9:00', value: '0 9 * * 1-5', hint: 'Mon–Fri 09:00' },
+  { label: 'Every hour', value: '0 * * * *', hint: 'On the hour' },
+  { label: 'Every 15 minutes', value: '*/15 * * * *', hint: 'Frequent polling' },
+  { label: 'Weekly on Sunday 20:00', value: '0 20 * * 0', hint: 'Weekly recap' },
+]
+
+function formatRelative(iso?: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const diff = d.getTime() - Date.now()
+  const abs = Math.abs(diff)
+  const mins = Math.round(abs / 60000)
+  const sign = diff < 0 ? 'ago' : 'in'
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${sign === 'in' ? 'in' : ''} ${mins}m ${sign === 'ago' ? 'ago' : ''}`.trim()
+  const hours = Math.round(mins / 60)
+  if (hours < 48) return `${sign === 'in' ? 'in' : ''} ${hours}h ${sign === 'ago' ? 'ago' : ''}`.trim()
+  const days = Math.round(hours / 24)
+  return `${sign === 'in' ? 'in' : ''} ${days}d ${sign === 'ago' ? 'ago' : ''}`.trim()
 }
 
 function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (id: string) => void }) {
@@ -37,6 +65,9 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
   const cfg = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending
   const Icon = cfg.icon
 
+  const displayName =
+    (task.payload as any)?._display_name || (task.args as any)?._display_name || task.name
+
   return (
     <div className="group border-b border-white/[0.02]">
       <div
@@ -45,10 +76,21 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
       >
         <div className="min-w-0">
           <p className="text-sm text-white/80 group-hover:text-white transition-colors truncate font-medium flex items-center gap-2">
-            {task.name}
+            {displayName}
+            {task.cron && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/20 text-[9px] font-mono text-sky-300">
+                <CalendarClock size={9} />
+                {task.cron}
+              </span>
+            )}
             {expanded && <ChevronRight size={12} className="rotate-90 text-[var(--accent)]" />}
           </p>
-          <p className="text-[10px] font-mono text-white/20 mt-0.5 truncate">{task.id}</p>
+          <p className="text-[10px] font-mono text-white/20 mt-0.5 truncate">
+            {task.id}
+            {task.next_run_at && (
+              <span className="ml-2 text-sky-400/70">next {formatRelative(task.next_run_at)}</span>
+            )}
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -79,10 +121,11 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
         </div>
 
         <div className="text-right">
-          {(task.status === 'pending' || task.status === 'running') && (
+          {(task.status === 'pending' || task.status === 'running' || task.status === 'scheduled') && (
             <button
               onClick={(e) => { e.stopPropagation(); onCancel(task.id) }}
               className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/20 hover:text-red-400 transition-all cursor-pointer"
+              title={task.status === 'scheduled' ? 'Stop schedule' : 'Cancel task'}
             >
               <XCircle size={14} />
             </button>
@@ -100,13 +143,29 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
           >
             <div className="px-6 py-6 space-y-6">
                <div className="grid grid-cols-2 gap-8">
-                  {/* Skill & Args */}
+                  {/* Skill & Payload */}
                   <div>
                     <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">Skill Target</h4>
                     <div className="bg-black/20 rounded-xl p-4 border border-white/5 font-mono text-xs">
-                       <span className="text-[var(--accent)] font-bold">{task.skill}</span>
-                       <div className="mt-2 text-white/40 break-all">{JSON.stringify(task.args, null, 2)}</div>
+                       <span className="text-[var(--accent)] font-bold">{task.skill || task.name}</span>
+                       <div className="mt-2 text-white/40 break-all whitespace-pre-wrap">
+                         {JSON.stringify(task.payload || task.args || {}, null, 2)}
+                       </div>
                     </div>
+                    {task.cron && (
+                      <div className="mt-3 bg-sky-500/5 rounded-xl p-3 border border-sky-500/10 text-xs space-y-1">
+                        <div className="flex items-center gap-2 text-sky-300">
+                          <CalendarClock size={12} />
+                          <span className="font-bold tracking-wider uppercase text-[10px]">Recurring</span>
+                        </div>
+                        <div className="font-mono text-sky-200/80">{task.cron}</div>
+                        <div className="text-white/40 text-[10px]">
+                          Next: {task.next_run_at ? new Date(task.next_run_at).toLocaleString() : '—'} ·
+                          Last: {task.last_run_at ? new Date(task.last_run_at).toLocaleString() : 'never'} ·
+                          Runs: {task.run_count ?? 0}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Result/Error */}
@@ -117,12 +176,12 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
                          {task.error}
                       </div>
                     ) : task.result ? (
-                      <div className="bg-[var(--success)]/5 rounded-xl p-4 border border-[var(--success)]/10 text-[var(--success)] text-xs font-mono">
-                         {JSON.stringify(task.result, null, 2)}
+                      <div className="bg-[var(--success)]/5 rounded-xl p-4 border border-[var(--success)]/10 text-[var(--success)] text-xs font-mono whitespace-pre-wrap">
+                         {typeof task.result === 'string' ? task.result : JSON.stringify(task.result, null, 2)}
                       </div>
                     ) : (
                       <div className="bg-white/5 rounded-xl p-4 border border-white/5 text-white/20 text-xs italic">
-                         Pending execution result...
+                         {task.status === 'scheduled' ? 'Waiting for next scheduled run…' : 'Pending execution result...'}
                       </div>
                     )}
                   </div>
@@ -142,7 +201,8 @@ export default function Tasks() {
   const [stats, setStats] = useState<TaskStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [showNewTask, setShowNewTask] = useState(false)
-  const [manifest, setManifest] = useState<any[]>([])
+  const [cronChoice, setCronChoice] = useState<string>('')  // '' = one-shot; 'custom' = free text; else preset value
+  const [cronCustom, setCronCustom] = useState<string>('')
 
   const load = useCallback(() => {
     api.getTasks().then((d) => { setTasks(d); setLoading(false) }).catch(() => setLoading(false))
@@ -151,7 +211,6 @@ export default function Tasks() {
 
   useEffect(() => {
     load()
-    api.getSkillManifest().then(setManifest).catch(() => {})
     const id = setInterval(load, 5000)
     return () => clearInterval(id)
   }, [load])
@@ -169,29 +228,37 @@ export default function Tasks() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     const form = e.target as HTMLFormElement
-    // Parse the args textarea BEFORE building the payload and keep it inside
-    // the try/catch so malformed JSON surfaces as a toast rather than throwing
-    // out of the handler (which would silently leave the modal open with no
-    // feedback to the user).
     try {
-      const rawArgs = (form.elements.namedItem('args') as HTMLTextAreaElement).value.trim()
-      let args: unknown
-      try {
-        args = rawArgs ? JSON.parse(rawArgs) : {}
-      } catch (parseErr: any) {
-        toast.error(`Invalid JSON in args: ${parseErr.message}`)
+      const name = (form.elements.namedItem('name') as HTMLInputElement).value.trim()
+      const prompt = (form.elements.namedItem('prompt') as HTMLTextAreaElement).value.trim()
+      const priority = parseInt((form.elements.namedItem('priority') as HTMLSelectElement).value)
+
+      let cron: string | null = null
+      if (cronChoice === 'custom') {
+        cron = cronCustom.trim() || null
+      } else if (cronChoice) {
+        cron = cronChoice
+      }
+
+      if (!prompt) {
+        toast.error('Prompt is required')
         return
       }
-      const data = {
-        name: (form.elements.namedItem('name') as HTMLInputElement).value,
-        skill: (form.elements.namedItem('skill') as HTMLSelectElement).value,
-        args,
-        priority: parseInt((form.elements.namedItem('priority') as HTMLSelectElement).value),
+
+      const payload = {
+        name: name || (cron ? 'Scheduled Task' : 'One-shot Task'),
+        skill: 'agent_prompt',
+        prompt,
+        priority,
+        cron,
       }
-      await api.createTask(data)
-      toast.success('Task scheduled')
+      const res = await api.createTask(payload)
+      toast.success(cron ? `Scheduled: next run when cron matches` : 'Task dispatched')
       setShowNewTask(false)
+      setCronChoice('')
+      setCronCustom('')
       load()
+      void res
     } catch (err: any) {
       toast.error(`Scheduling failed: ${err.message}`)
     }
@@ -227,8 +294,9 @@ export default function Tasks() {
           {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-24 reflective rounded-2xl" />)}
         </div>
       ) : stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
           <StatsCard label="Total" value={stats.total} />
+          <StatsCard label="Scheduled" value={stats.scheduled ?? 0} icon={CalendarClock} />
           <StatsCard label="Pending" value={stats.pending} icon={Clock} />
           <StatsCard label="Running" value={stats.running} icon={Loader2} accent />
           <StatsCard label="Completed" value={stats.completed} icon={CheckCircle2} />
@@ -288,37 +356,116 @@ export default function Tasks() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-[var(--bg-card)] border border-white/10 rounded-3xl shadow-2xl p-8 space-y-6"
+              className="relative w-full max-w-xl bg-[var(--bg-card)] border border-white/10 rounded-3xl shadow-2xl p-8 space-y-6 max-h-[90vh] overflow-y-auto"
             >
-               <h3 className="text-xl font-bold text-white">Dispatch New Task</h3>
-               <form onSubmit={handleCreate} className="space-y-4">
+               <div>
+                 <h3 className="text-xl font-bold text-white">Dispatch New Task</h3>
+                 <p className="text-xs text-[var(--text-muted)] mt-1">
+                   Run something once, or schedule it to recur. The agent handles the task end-to-end with all tools available.
+                 </p>
+               </div>
+               <form onSubmit={handleCreate} className="space-y-5">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Task Label</label>
-                    <input name="name" required placeholder="e.g. Daily Market Summary" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors" />
+                    <input name="name" placeholder="e.g. Morning Gmail digest" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Target Skill</label>
-                      <select name="skill" required className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors appearance-none">
-                        {manifest.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Priority</label>
-                      <select name="priority" defaultValue="2" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors appearance-none">
-                        <option value="1">P1 (Urgent)</option>
-                        <option value="2">P2 (Normal)</option>
-                        <option value="3">P3 (Background)</option>
-                      </select>
-                    </div>
-                  </div>
+
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Arguments (JSON)</label>
-                    <textarea name="args" rows={4} placeholder="{}" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:border-[var(--accent)]/40 transition-colors" />
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">
+                      Prompt for the Agent
+                    </label>
+                    <textarea
+                      name="prompt"
+                      rows={4}
+                      required
+                      placeholder="e.g. Check my Gmail and summarize any new important emails to WhatsApp."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors"
+                    />
+                    <p className="text-[10px] text-[var(--text-muted)] pl-1">
+                      The agent executes this with its full toolset. Be specific about output channel (WhatsApp, email, log, …).
+                    </p>
                   </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2">
+                      <CalendarClock size={11} />
+                      Schedule
+                    </label>
+                    <div className="grid grid-cols-1 gap-2 mt-2">
+                      <label className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/5 cursor-pointer transition-all">
+                        <input
+                          type="radio"
+                          name="cronChoice"
+                          checked={cronChoice === ''}
+                          onChange={() => setCronChoice('')}
+                          className="accent-[var(--accent)]"
+                        />
+                        <span className="text-sm">Run once now</span>
+                      </label>
+                      {CRON_PRESETS.map((p) => (
+                        <label
+                          key={p.value}
+                          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                            cronChoice === p.value
+                              ? 'border-sky-500/40 bg-sky-500/10'
+                              : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="cronChoice"
+                            checked={cronChoice === p.value}
+                            onChange={() => setCronChoice(p.value)}
+                            className="accent-[var(--accent)]"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm">{p.label}</div>
+                            <div className="text-[10px] text-[var(--text-muted)] font-mono">{p.value} · {p.hint}</div>
+                          </div>
+                        </label>
+                      ))}
+                      <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        cronChoice === 'custom'
+                          ? 'border-sky-500/40 bg-sky-500/10'
+                          : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="cronChoice"
+                          checked={cronChoice === 'custom'}
+                          onChange={() => setCronChoice('custom')}
+                          className="accent-[var(--accent)] mt-1"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm">Custom cron expression</div>
+                          <input
+                            type="text"
+                            value={cronCustom}
+                            onChange={(e) => setCronCustom(e.target.value)}
+                            onFocus={() => setCronChoice('custom')}
+                            placeholder="min hour dom month dow  (e.g. 30 7 * * 1-5)"
+                            className="mt-2 w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-sky-500/40 transition-colors"
+                          />
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Priority</label>
+                    <select name="priority" defaultValue="2" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors appearance-none">
+                      <option value="0">P0 (Critical)</option>
+                      <option value="1">P1 (High)</option>
+                      <option value="2">P2 (Normal)</option>
+                      <option value="3">P3 (Background)</option>
+                    </select>
+                  </div>
+
                   <div className="flex gap-3 pt-4">
                     <button type="button" onClick={() => setShowNewTask(false)} className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-sm font-bold text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancel</button>
-                    <button type="submit" className="flex-1 px-6 py-3 rounded-xl bg-[var(--accent)] text-black text-sm font-bold shadow-lg shadow-[var(--accent-glow)] hover:scale-105 active:scale-95 transition-all">Dispatch</button>
+                    <button type="submit" className="flex-1 px-6 py-3 rounded-xl bg-[var(--accent)] text-black text-sm font-bold shadow-lg shadow-[var(--accent-glow)] hover:scale-105 active:scale-95 transition-all">
+                      {cronChoice ? 'Schedule' : 'Dispatch'}
+                    </button>
                   </div>
                </form>
             </motion.div>
