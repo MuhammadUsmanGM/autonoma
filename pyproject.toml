@@ -15,6 +15,9 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "rich>=13.0",
+    # Used to render the WhatsApp reconnect QR inline in the TUI. Pure-Python
+    # with no C extensions, so it's cheap to keep in the core deps.
+    "qrcode>=7.4",
 ]
 
 [project.optional-dependencies]

@@ -21,6 +21,12 @@ const WEBHOOK_URL =
   "http://localhost:8766/webhook/whatsapp";
 
 let isReady = false;
+// Cache the most recent QR string so the TUI / dashboard can fetch it on
+// demand via GET /qr. whatsapp-web.js emits 'qr' multiple times (every ~20s
+// while the code rotates) — we just keep the latest. Cleared once 'ready'
+// fires so stale codes don't linger on the status panel after login.
+let lastQr = null;
+let lastQrAt = 0;
 
 // --- WhatsApp Client ---
 
@@ -45,8 +51,13 @@ const client = new Client({
 });
 
 client.on("qr", (qr) => {
+  lastQr = qr;
+  lastQrAt = Date.now();
   console.log("\n--- Scan this QR code with WhatsApp ---\n");
   qrcode.generate(qr, { small: true });
+  console.log(
+    "\n[bridge] QR also available at GET /qr for the Autonoma TUI / dashboard.\n"
+  );
 });
 
 client.on("authenticated", () => {
@@ -61,6 +72,10 @@ client.on("auth_failure", (msg) => {
 client.on("ready", () => {
   console.log("[bridge] WhatsApp client ready");
   isReady = true;
+  // Drop the QR once we're logged in — any client polling /qr should stop
+  // seeing stale codes once the session is active.
+  lastQr = null;
+  lastQrAt = 0;
 });
 
 client.on("disconnected", (reason) => {
@@ -142,8 +157,32 @@ const server = http.createServer(async (req, res) => {
 
   // GET /status
   if (req.method === "GET" && req.url === "/status") {
-    const status = isReady ? "ready" : "disconnected";
-    return sendJSON(200, { status });
+    const status = isReady ? "ready" : lastQr ? "awaiting_scan" : "disconnected";
+    return sendJSON(200, {
+      status,
+      has_qr: Boolean(lastQr),
+      qr_age_seconds: lastQrAt ? Math.round((Date.now() - lastQrAt) / 1000) : null,
+    });
+  }
+
+  // GET /qr — raw QR payload for the Autonoma TUI / dashboard to render. The
+  // string is the literal whatsapp:// URL payload; clients can either render
+  // it with their own QR library or just paste it into a mobile QR generator.
+  if (req.method === "GET" && req.url === "/qr") {
+    if (!lastQr) {
+      return sendJSON(404, {
+        qr: null,
+        status: isReady ? "ready" : "waiting",
+        message: isReady
+          ? "Session already authenticated — no QR required."
+          : "Bridge hasn't emitted a QR yet. Wait a few seconds and retry.",
+      });
+    }
+    return sendJSON(200, {
+      qr: lastQr,
+      status: "awaiting_scan",
+      age_seconds: Math.round((Date.now() - lastQrAt) / 1000),
+    });
   }
 
   // POST /send

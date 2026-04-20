@@ -603,7 +603,7 @@ def register_dashboard_routes(
                 "telegram": {"enabled": ch_cfg.telegram.enabled, "name": "Telegram", "has_credentials": bool(ch_cfg.telegram.bot_token)},
                 "discord": {"enabled": ch_cfg.discord.enabled, "name": "Discord", "has_credentials": bool(ch_cfg.discord.bot_token)},
                 "whatsapp": {"enabled": ch_cfg.whatsapp.enabled, "name": "WhatsApp", "has_credentials": True},  # WhatsApp uses QR
-                "gmail": {"enabled": ch_cfg.gmail.enabled, "name": "Gmail", "has_credentials": bool(ch_cfg.gmail.address and ch_cfg.gmail.app_password)},
+                "gmail": {"enabled": ch_cfg.gmail.enabled, "name": "Gmail", "has_credentials": bool(ch_cfg.gmail.email_address and ch_cfg.gmail.app_password)},
                 "rest": {"enabled": ch_cfg.rest.enabled, "name": "REST API", "has_credentials": True},
             }
             
@@ -836,6 +836,47 @@ def register_dashboard_routes(
             logger.error("Dashboard POST /api/webhooks/replay error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    async def handle_whatsapp_qr(request: dict) -> tuple[int, dict[str, str], str]:
+        """GET /api/channels/whatsapp/qr — proxy through to the bridge's /qr.
+
+        The bridge lives on a separate port (BRIDGE_PORT, default 3001) that
+        the browser can't hit cross-origin when the dashboard is served from
+        the gateway. Proxying keeps the secret raw-QR string on the server
+        side and gives the dashboard a single origin to talk to."""
+        headers = {"Content-Type": "application/json"}
+        try:
+            from autonoma.config import load_config as _load_config
+            cfg = _load_config()
+            bridge_url = (cfg.channels.whatsapp.bridge_url or "http://localhost:3001").rstrip("/")
+
+            # Use httpx if available (already a whatsapp.py dep); otherwise
+            # fall back to urllib so this endpoint never hard-crashes if the
+            # import surface shifts.
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(f"{bridge_url}/qr")
+                    return resp.status_code, headers, resp.text
+            except ImportError:
+                import urllib.request
+                import urllib.error
+                def _fetch() -> tuple[int, str]:
+                    try:
+                        with urllib.request.urlopen(f"{bridge_url}/qr", timeout=5.0) as r:
+                            return r.getcode(), r.read().decode("utf-8", errors="replace")
+                    except urllib.error.HTTPError as he:
+                        body = he.read().decode("utf-8", errors="replace") if he.fp else ""
+                        return he.code, body or json.dumps({"error": str(he)})
+                status_code, body = await asyncio.to_thread(_fetch)
+                return status_code, headers, body
+        except Exception as e:
+            logger.error("Dashboard GET /api/channels/whatsapp/qr error: %s", e)
+            return 502, headers, json.dumps({
+                "error": "bridge_unreachable",
+                "message": str(e),
+                "hint": "Is the whatsapp-bridge sidecar running?",
+            })
+
     async def handle_proxy_health(request: dict) -> tuple[int, dict[str, str], str]:
         """GET /api/proxy/health — return the latest cached probe results.
 
@@ -954,8 +995,9 @@ def register_dashboard_routes(
 
     http_server.add_route("GET", "/api/proxy/health", handle_proxy_health)
     http_server.add_route("POST", "/api/proxy/health/recheck", handle_proxy_health_recheck)
+    http_server.add_route("GET", "/api/channels/whatsapp/qr", handle_whatsapp_qr)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 33)
+    logger.info("Dashboard API routes registered (%d endpoints)", 34)
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

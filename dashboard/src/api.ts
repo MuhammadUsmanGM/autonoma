@@ -148,6 +148,11 @@ export const api = {
 
   getSkillManifest: () => request<SkillManifest[]>('/skills/manifest'),
 
+  getWhatsAppQR: () =>
+    request<{ qr: string | null; status: string; age_seconds?: number; message?: string }>(
+      '/channels/whatsapp/qr'
+    ),
+
   getProxyHealth: () => request<ProxyHealth[]>('/proxy/health'),
 
   recheckProxyHealth: (channel?: string) =>

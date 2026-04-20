@@ -5,7 +5,9 @@ import { api } from '../api'
 import { toast } from 'sonner'
 import Skeleton from '../components/Skeleton'
 import ChannelHealthBadge from '../components/ChannelHealthBadge'
+import WhatsAppQRModal from '../components/WhatsAppQRModal'
 import type { ChannelInfo } from '../types'
+import { QrCode } from 'lucide-react'
 
 const CHANNEL_META: Record<string, { desc: string, icon: any }> = {
   telegram: { desc: 'Bot via @BotFather', icon: MessageSquare },
@@ -19,10 +21,14 @@ export default function Channels() {
   const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Credentials Modal State
   const [showModal, setShowModal] = useState<string | null>(null)
   const [creds, setCreds] = useState<Record<string, string>>({})
+  // WhatsApp QR modal — shown on "Show QR" click OR automatically after a
+  // reconnect so the user doesn't need a second click to scan.
+  const [showQR, setShowQR] = useState(false)
 
   useEffect(() => {
     loadChannels()
@@ -34,8 +40,12 @@ export default function Channels() {
     try {
       const data = await api.getChannels()
       setChannels(data)
+      setLoadError(null)
     } catch (e: any) {
+      // Silent console.error was hiding real 500s — surface them so users
+      // don't see a blank page and assume everything is broken.
       console.error('Failed to load channels:', e)
+      setLoadError(e?.message || 'Failed to load channels')
     } finally {
       setLoading(false)
     }
@@ -71,6 +81,13 @@ export default function Channels() {
       await api.reconnectChannel(channelId)
       toast.success(`${channelId} reconnected successfully.`, { id: toastId })
       await loadChannels()
+      // WhatsApp: reconnect means the session was wiped and the bridge will
+      // emit a fresh QR within a few seconds. Open the modal automatically so
+      // the user doesn't have to chase it — this is the whole point of the
+      // feature they asked for.
+      if (channelId === 'whatsapp') {
+        setShowQR(true)
+      }
     } catch (e: any) {
       toast.error(`Reconnect failed: ${e.message}`, { id: toastId })
     }
@@ -121,6 +138,25 @@ export default function Channels() {
           <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
         </button>
       </header>
+
+      {loadError && (
+        <div className="flex items-start gap-3 px-5 py-4 rounded-xl bg-[var(--error)]/5 border border-[var(--error)]/20">
+          <AlertTriangle size={16} className="text-[var(--error)] shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-[var(--error)]">Could not load channels</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1 font-mono break-words">{loadError}</p>
+            <p className="text-[10px] text-[var(--text-muted)] mt-2">
+              Check that Autonoma is running and reachable on the configured HTTP port.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!loadError && channels.length === 0 && (
+        <div className="flex items-center justify-center py-16 text-sm text-[var(--text-muted)]">
+          No channels returned by the gateway.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {channels.map((ch, idx) => {
@@ -202,6 +238,17 @@ export default function Channels() {
                       Reconnect
                     </button>
                   )}
+
+                  {ch.id === 'whatsapp' && ch.enabled && (
+                    <button
+                      onClick={() => setShowQR(true)}
+                      className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-[var(--success)] bg-[var(--success)]/10 hover:bg-[var(--success)]/20 flex items-center gap-1.5 uppercase transition-all cursor-pointer"
+                      title="Show the WhatsApp QR from the bridge"
+                    >
+                      <QrCode size={12} />
+                      Show QR
+                    </button>
+                  )}
                 </div>
 
                 {!['whatsapp', 'rest'].includes(ch.id) && (
@@ -221,6 +268,8 @@ export default function Channels() {
           )
         })}
       </div>
+
+      <WhatsAppQRModal open={showQR} onClose={() => setShowQR(false)} />
 
       {/* Basic Credentials Modal */}
       {showModal && (

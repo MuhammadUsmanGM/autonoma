@@ -985,10 +985,6 @@ class AutonomaTUI:
                 self.console.print(
                     "[dim]No cached WhatsApp session found on disk — nothing to wipe.[/]"
                 )
-            self.console.print(
-                "\n[bold]Next:[/] restart Autonoma and watch the bridge output — "
-                "it will print a fresh QR code for your phone to scan."
-            )
             # Make sure the bridge URL is present so the agent actually
             # starts the bridge. If the user cleared it, reprompt.
             if not os.getenv("WHATSAPP_BRIDGE_URL"):
@@ -996,6 +992,10 @@ class AutonomaTUI:
                     "\n[yellow]WHATSAPP_BRIDGE_URL is not set — configure it now:[/]"
                 )
                 self._configure_channel(name)
+
+            # Try to pull a live QR from the bridge's /qr endpoint so the
+            # user can scan right here instead of hunting through bridge logs.
+            self._show_whatsapp_qr()
             self._pause()
             return
 
@@ -1021,6 +1021,122 @@ class AutonomaTUI:
                 f"Restart Autonoma to apply.[/]"
             )
         self._pause(short=True)
+
+    def _show_whatsapp_qr(self) -> None:
+        """Poll the local whatsapp-web.js bridge for its latest QR and render it.
+
+        The bridge caches the most recent QR emitted by whatsapp-web.js and
+        serves it via GET /qr. We poll for up to ~30s because the bridge
+        needs a beat to spin up puppeteer after the agent restarts; after
+        that we fall back to a "check bridge logs" hint so the user isn't
+        stranded if the bridge process died."""
+        import json
+        import urllib.error
+        import urllib.request
+        from rich.panel import Panel
+
+        bridge_url = (os.getenv("WHATSAPP_BRIDGE_URL") or "http://localhost:3001").rstrip("/")
+        qr_url = f"{bridge_url}/qr"
+
+        self.console.print(
+            f"\n[dim]Asking bridge at {bridge_url} for a fresh QR "
+            "(give it a few seconds to initialize)…[/]"
+        )
+
+        # The bridge may still be starting — poll gently. 15 attempts × 2s
+        # gives a 30s budget, which is comfortably longer than puppeteer's
+        # usual cold start. We abort early on any 200 with a QR.
+        deadline_attempts = 15
+        last_error: str | None = None
+        for attempt in range(deadline_attempts):
+            try:
+                with urllib.request.urlopen(qr_url, timeout=3.0) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    payload = json.loads(raw)
+                    status_code = resp.getcode()
+                if status_code == 200 and payload.get("qr"):
+                    self._render_qr_panel(payload["qr"], payload.get("age_seconds"))
+                    return
+                # 404 means bridge is up but either already logged in or not
+                # ready yet — surface the distinction rather than spin silently.
+                if payload.get("status") == "ready":
+                    self.console.print(
+                        Panel(
+                            "[green]WhatsApp session is already authenticated — "
+                            "no QR needed.[/]\n"
+                            "[dim]If you wanted a fresh login, wipe the session "
+                            "first via Reconnect, then try again.[/]",
+                            title="WhatsApp",
+                            border_style="green",
+                        )
+                    )
+                    return
+                last_error = payload.get("message") or f"bridge responded {status_code}"
+            except urllib.error.URLError as e:
+                last_error = f"bridge unreachable: {e.reason}"
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = f"bad bridge response: {e}"
+            except Exception as e:  # pragma: no cover — defensive
+                last_error = str(e)
+            time.sleep(2.0)
+
+        # Fell through the polling budget — tell the user what to do next.
+        self.console.print(
+            Panel(
+                f"[yellow]Could not fetch a QR from the bridge.[/]\n"
+                f"[dim]Last error: {last_error or 'timeout'}[/]\n\n"
+                "Check that the whatsapp-bridge sidecar is running "
+                "([cyan]npm start[/] in [cyan]whatsapp-bridge/[/]) and that "
+                f"[cyan]{bridge_url}[/] is reachable. Once it's up, re-run "
+                "Reconnect and the QR will appear here.",
+                title="WhatsApp QR",
+                border_style="yellow",
+            )
+        )
+
+    def _render_qr_panel(self, qr_string: str, age_seconds: int | None) -> None:
+        """Render a scannable QR in the terminal from the raw WA payload.
+
+        whatsapp-web.js emits the literal string that must be encoded into
+        the QR image — we use qrcode-terminal-equivalent output via the
+        `qrcode` Python package. Falls back to printing the raw string (so
+        the user can paste it into any QR generator) if qrcode is missing."""
+        from rich.panel import Panel
+
+        age_note = (
+            f"[dim]QR age: {age_seconds}s — rotates every ~20s, will refresh on next Reconnect.[/]"
+            if age_seconds is not None
+            else ""
+        )
+
+        try:
+            import qrcode  # type: ignore
+
+            qr = qrcode.QRCode(border=1)
+            qr.add_data(qr_string)
+            qr.make(fit=True)
+            # Render into a string buffer so Rich owns the final output.
+            import io
+            buf = io.StringIO()
+            qr.print_ascii(out=buf, invert=True)
+            art = buf.getvalue().rstrip("\n")
+            body = f"{art}\n\n{age_note}\n\n[dim]Open WhatsApp → Settings → Linked devices → Link a device.[/]"
+            self.console.print(
+                Panel(body, title="Scan this with WhatsApp", border_style="green")
+            )
+        except ImportError:
+            # Graceful fallback — user can paste this into any online QR
+            # generator or run `pip install qrcode` to get inline rendering.
+            self.console.print(
+                Panel(
+                    f"[dim]Install [cyan]qrcode[/] for inline rendering: "
+                    f"[cyan]pip install qrcode[/][/]\n\n"
+                    f"[bold]Raw QR payload:[/]\n"
+                    f"[cyan]{qr_string}[/]\n\n{age_note}",
+                    title="WhatsApp QR (raw)",
+                    border_style="yellow",
+                )
+            )
 
     def _ensure_env_loaded(self) -> None:
         """Reload .env into os.environ only if the file changed on disk."""
