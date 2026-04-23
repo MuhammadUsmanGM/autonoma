@@ -9,7 +9,9 @@
     <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React">
     <img src="https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
     <img src="https://img.shields.io/badge/SQLite-FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
-    <img src="https://img.shields.io/npm/v/autonoma-ai?style=flat-square&color=cb3837&logo=npm" alt="npm">
+    <img src="https://img.shields.io/npm/v/autonoma-ai?style=flat-square&color=cb3837&logo=npm" alt="npm version">
+    <img src="https://img.shields.io/npm/dm/autonoma-ai?style=flat-square&color=cb3837&logo=npm" alt="npm downloads">
+    <img src="https://img.shields.io/bundlephobia/min/autonoma-ai?style=flat-square&color=8b5cf6" alt="install size">
     <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square" alt="PRs Welcome">
   </p>
 </p>
