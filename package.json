@@ -1,11 +1,13 @@
 {
   "name": "autonoma-ai",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "AI agent platform with multi-channel support, intelligent memory, and real-time dashboard",
   "bin": {
     "autonoma": "./bin/autonoma.js"
   },
   "scripts": {
+    "prepack": "node scripts/prepack.js",
+    "prepublishOnly": "node scripts/prepublish-check.js",
     "postinstall": "node scripts/install.js"
   },
   "keywords": [
@@ -36,7 +38,7 @@
   },
   "homepage": "https://github.com/MuhammadUsmanGM/autonoma#readme",
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
   "os": [
     "darwin",
@@ -47,6 +49,10 @@
     "bin/",
     "scripts/",
     "autonoma/",
+    "dashboard/dist/",
+    "dashboard/package.json",
+    "whatsapp-bridge/index.js",
+    "whatsapp-bridge/package.json",
     "workspace/SOUL.md",
     "autonoma.yaml",
     ".env.example",

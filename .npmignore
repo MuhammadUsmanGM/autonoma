@@ -7,8 +7,16 @@
 .venv/
 *.egg-info/
 __pycache__/
-dist/
-build/
+**/__pycache__/
+**/__pycache__/**
+*.pyc
+*.pyo
+*.pyd
+# Python build output (do NOT match dashboard/dist which is a shipped asset)
+/dist/
+/build/
+!dashboard/dist/
+!dashboard/dist/**
 
 # Dashboard and bridge node_modules
 dashboard/node_modules/

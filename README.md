@@ -72,18 +72,23 @@ Secure execution environment with built-in tools for web search, file operations
 npm install -g autonoma-ai
 ```
 
-This automatically sets up a Python virtual environment and installs all dependencies.
+The postinstall step creates a Python virtual environment and installs the
+Python runtime. If Python 3.11+ is not on your `PATH`, install it from
+[python.org](https://www.python.org/downloads/) and run
+`npm rebuild autonoma-ai`. The npm install itself will succeed either way —
+only the Python runtime step is deferred.
+
+Configure your API key via environment variable (exported in your shell, or in
+a `.env` file in the directory you run `autonoma` from):
 
 ```bash
-# Configure environment
-cp .env.example .env
-# Edit .env — add your API key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY)
-
-# Run the agent
+export OPENROUTER_API_KEY=sk-or-...    # or ANTHROPIC_API_KEY
 autonoma
 ```
 
-> **Requires:** Node.js 16+ and Python 3.11+
+> **Requires:** Node.js 18+ and Python 3.11+
+> CI users can set `AUTONOMA_SKIP_POSTINSTALL=1` to skip the Python step
+> during `npm install`.
 
 ### Install from source
 
@@ -99,6 +104,12 @@ python -m autonoma
 ```
 
 ### Dashboard
+
+The npm package ships the pre-built dashboard (`dashboard/dist/`) — it is
+served automatically by the Autonoma gateway on `http://127.0.0.1:8766`
+when you run `autonoma`. No separate dev server is needed for end users.
+
+Dashboard contributors working from a source clone can run it standalone:
 
 ```bash
 cd dashboard

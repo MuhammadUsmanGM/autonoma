@@ -25,8 +25,30 @@ function log(msg) {
   console.log(`\x1b[33m[autonoma]\x1b[0m ${msg}`);
 }
 
+function warn(msg) {
+  console.warn(`\x1b[33m[autonoma]\x1b[0m ${msg}`);
+}
+
 function error(msg) {
   console.error(`\x1b[31m[autonoma]\x1b[0m ${msg}`);
+}
+
+function bail(msg) {
+  console.log("");
+  warn(msg);
+  warn("Autonoma is installed, but the Python runtime was not set up.");
+  warn("Finish setup manually when ready:");
+  warn("  1. Install Python " + MIN_PYTHON.join(".") + "+ from https://www.python.org/downloads/");
+  warn("  2. cd " + ROOT);
+  warn("  3. python -m venv .venv");
+  warn(
+    "  4. " +
+      (IS_WIN ? ".venv\\Scripts\\pip" : ".venv/bin/pip") +
+      " install -e ."
+  );
+  warn("Or run: npm rebuild autonoma-ai");
+  console.log("");
+  process.exit(0);
 }
 
 // --- Find Python ---
@@ -59,16 +81,23 @@ function findPython() {
 // --- Main ---
 
 function main() {
+  // Skip postinstall in CI and when explicitly opted out. npm install should
+  // never fail just because Python isn't on the box.
+  if (process.env.AUTONOMA_SKIP_POSTINSTALL === "1") {
+    log("AUTONOMA_SKIP_POSTINSTALL=1 set, skipping Python setup.");
+    return;
+  }
+  if (process.env.CI && !process.env.AUTONOMA_FORCE_POSTINSTALL) {
+    log("CI detected, skipping Python setup (set AUTONOMA_FORCE_POSTINSTALL=1 to run).");
+    return;
+  }
+
   log("Setting up Autonoma...\n");
 
   // 1. Find Python
   const python = findPython();
   if (!python) {
-    error(
-      `Python ${MIN_PYTHON.join(".")}+ is required but not found.\n` +
-      `Install it from https://www.python.org/downloads/`
-    );
-    process.exit(1);
+    return bail(`Python ${MIN_PYTHON.join(".")}+ not found on PATH.`);
   }
 
   // 2. Create venv (skip if already exists)
@@ -79,9 +108,7 @@ function main() {
     try {
       execSync(`${python} -m venv "${VENV}"`, { stdio: "inherit", cwd: ROOT });
     } catch (e) {
-      error("Failed to create virtual environment.");
-      error("Try: pip install virtualenv && python -m venv .venv");
-      process.exit(1);
+      return bail("Failed to create virtual environment.");
     }
   }
 
@@ -104,9 +131,7 @@ function main() {
       cwd: ROOT,
     });
   } catch (e) {
-    error("Failed to install dependencies.");
-    error("Try manually: cd " + ROOT + " && .venv/bin/pip install -e .");
-    process.exit(1);
+    return bail("Failed to install Python dependencies.");
   }
 
   // 5. Done
@@ -118,4 +143,10 @@ function main() {
   log("  3. Run: autonoma\n");
 }
 
-main();
+try {
+  main();
+} catch (e) {
+  error("Unexpected postinstall error: " + (e && e.message ? e.message : e));
+  warn("Continuing without Python setup. Run `npm rebuild autonoma-ai` after installing Python.");
+  process.exit(0);
+}

@@ -16,7 +16,7 @@ const PYTHON = IS_WIN
 
 if (!fs.existsSync(PYTHON)) {
   console.error(
-    "\x1b[31m[autonoma]\x1b[0m Python venv not found. Run: npm rebuild autonoma"
+    "\x1b[31m[autonoma]\x1b[0m Python venv not found. Run: npm rebuild autonoma-ai"
   );
   process.exit(1);
 }
