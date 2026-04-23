@@ -4,25 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autonoma"
-version = "0.1.0"
+version = "1.0.0"
 description = "Autonoma — Open-source AI agent platform. Build, deploy, and run digital employees."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "anthropic>=0.40.0",
-    "websockets>=13.0",
-    "pyyaml>=6.0",
-    "python-dotenv>=1.0",
-    "rich>=13.0",
+    "anthropic>=0.40.0,<1.0.0",
+    "websockets>=13.0,<16.0",
+    "pyyaml>=6.0,<7.0",
+    "python-dotenv>=1.0,<2.0",
+    "rich>=13.0,<15.0",
     # Used to render the WhatsApp reconnect QR inline in the TUI. Pure-Python
     # with no C extensions, so it's cheap to keep in the core deps.
-    "qrcode>=7.4",
+    "qrcode>=7.4,<9.0",
 ]
 
 [project.optional-dependencies]
-telegram = ["python-telegram-bot>=22.0"]
-all-channels = ["python-telegram-bot>=22.0"]
+telegram = ["python-telegram-bot>=22.0,<23.0"]
+all-channels = ["python-telegram-bot>=22.0,<23.0"]
 
 [project.scripts]
 autonoma = "autonoma.main:cli_entry"

@@ -224,8 +224,15 @@ def cli_entry() -> None:
     With no arguments, launches the interactive TUI control panel.
     With --start or -c, launches the agent directly (headless / CI mode).
     """
+    from autonoma import __version__
+
     parser = argparse.ArgumentParser(
         description="Autonoma — AI Agent Platform"
+    )
+    parser.add_argument(
+        "-V", "--version",
+        action="version",
+        version=f"autonoma {__version__}",
     )
     parser.add_argument(
         "-c", "--config", default=None, help="Path to config YAML file"
