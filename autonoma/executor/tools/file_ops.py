@@ -1,19 +1,50 @@
-"""File operation tools — read, write, and list files in workspace."""
+"""File operation tools — read, write, and list files in the sandbox.
+
+All path resolution goes through :func:`autonoma.executor.path_safety.resolve_within`
+which fixes the earlier prefix-match bug that let ``../workspace_evil/secret``
+escape a ``workspace``-rooted sandbox. Writes are additionally gated by an
+extension denylist and a per-file size cap drawn from the sandbox config.
+"""
 
 from __future__ import annotations
 
-import os
+import logging
 from pathlib import Path
 from typing import Any
 
+from autonoma.executor.path_safety import PathSafetyError, resolve_within
+from autonoma.executor.sandbox import Sandbox
 from autonoma.executor.tools.base import BaseTool, ToolPermission
 
+logger = logging.getLogger(__name__)
 
-class FileReadTool(BaseTool):
+
+from autonoma.observability.metrics import record_sandbox_denial as _record_denial
+
+
+class _SandboxedFileTool(BaseTool):
+    """Common base for file tools that share a sandbox instance."""
+
+    def __init__(self, sandbox: Sandbox):
+        self._sandbox = sandbox
+
+    @property
+    def _base_dir(self) -> Path:
+        return self._sandbox.get_allowed_dirs()[0]
+
+    def _resolve(self, rel_path: str, tool_name: str) -> Path | str:
+        """Return a resolved, in-sandbox :class:`Path` — or an error string."""
+        try:
+            resolved = resolve_within(self._base_dir, rel_path)
+        except PathSafetyError as e:
+            logger.warning("%s denied: %s", tool_name, e)
+            _record_denial(tool_name, str(e))
+            return f"Error: {e}"
+        return resolved.absolute
+
+
+class FileReadTool(_SandboxedFileTool):
     """Read the contents of a file."""
-
-    def __init__(self, sandbox_dir: str = "workspace"):
-        self._sandbox = Path(sandbox_dir).resolve()
 
     @property
     def name(self) -> str:
@@ -44,9 +75,9 @@ class FileReadTool(BaseTool):
         }
 
     async def execute(self, params: dict[str, Any]) -> str:
-        path = self._resolve(params.get("path", ""))
+        path = self._resolve(params.get("path", ""), "file_read")
         if isinstance(path, str):
-            return path  # Error message
+            return path
 
         if not path.exists():
             return f"Error: File not found: {params['path']}"
@@ -61,20 +92,9 @@ class FileReadTool(BaseTool):
         except Exception as e:
             return f"Error reading file: {e}"
 
-    def _resolve(self, rel_path: str) -> Path | str:
-        if not rel_path:
-            return "Error: No file path provided."
-        resolved = (self._sandbox / rel_path).resolve()
-        if not str(resolved).startswith(str(self._sandbox)):
-            return "Error: Path is outside workspace directory."
-        return resolved
 
-
-class FileWriteTool(BaseTool):
+class FileWriteTool(_SandboxedFileTool):
     """Write content to a file."""
-
-    def __init__(self, sandbox_dir: str = "workspace"):
-        self._sandbox = Path(sandbox_dir).resolve()
 
     @property
     def name(self) -> str:
@@ -113,37 +133,54 @@ class FileWriteTool(BaseTool):
         }
 
     async def execute(self, params: dict[str, Any]) -> str:
-        path = self._resolve(params.get("path", ""))
+        rel = params.get("path", "")
+        path = self._resolve(rel, "file_write")
         if isinstance(path, str):
             return path
 
+        cfg = self._sandbox.config
+        ext = path.suffix.lower()
+        if ext in {e.lower() for e in cfg.write_denied_extensions}:
+            _record_denial("file_write", f"denied extension {ext}")
+            return f"Error: writing '{ext}' files is blocked by sandbox policy."
+
         content = params.get("content", "")
-        append = params.get("append", False)
+        if not isinstance(content, str):
+            content = str(content)
+        max_bytes = cfg.max_file_size_mb * 1024 * 1024
+        if max_bytes > 0 and len(content.encode("utf-8", errors="replace")) > max_bytes:
+            _record_denial("file_write", "content exceeds max_file_size_mb")
+            return (
+                f"Error: content exceeds max_file_size_mb "
+                f"({cfg.max_file_size_mb} MiB) limit."
+            )
+
+        append = bool(params.get("append", False))
 
         try:
+            # Re-resolve the *parent* after creating intermediate dirs so a
+            # symlink planted between initial resolve and write can't redirect
+            # us outside the sandbox. If resolution fails the second time we
+            # bail out.
             path.parent.mkdir(parents=True, exist_ok=True)
+            parent_resolved = path.parent.resolve()
+            try:
+                parent_resolved.relative_to(self._base_dir)
+            except ValueError:
+                _record_denial("file_write", "parent escaped after mkdir (symlink?)")
+                return "Error: refused to write — parent directory escaped sandbox."
+
             mode = "a" if append else "w"
             with open(path, mode, encoding="utf-8") as f:
                 f.write(content)
             action = "Appended to" if append else "Wrote"
-            return f"{action} file: {params['path']} ({len(content)} chars)"
+            return f"{action} file: {rel} ({len(content)} chars)"
         except Exception as e:
             return f"Error writing file: {e}"
 
-    def _resolve(self, rel_path: str) -> Path | str:
-        if not rel_path:
-            return "Error: No file path provided."
-        resolved = (self._sandbox / rel_path).resolve()
-        if not str(resolved).startswith(str(self._sandbox)):
-            return "Error: Path is outside workspace directory."
-        return resolved
 
-
-class FileListTool(BaseTool):
+class FileListTool(_SandboxedFileTool):
     """List files in a directory."""
-
-    def __init__(self, sandbox_dir: str = "workspace"):
-        self._sandbox = Path(sandbox_dir).resolve()
 
     @property
     def name(self) -> str:
@@ -173,23 +210,37 @@ class FileListTool(BaseTool):
         }
 
     async def execute(self, params: dict[str, Any]) -> str:
-        rel = params.get("path", ".")
-        target = (self._sandbox / rel).resolve()
+        rel = params.get("path", ".") or "."
+        # Special-case "." / "" as the sandbox root.
+        if rel in (".", "./", ""):
+            target = self._base_dir
+        else:
+            resolved = self._resolve(rel, "file_list")
+            if isinstance(resolved, str):
+                return resolved
+            target = resolved
 
-        if not str(target).startswith(str(self._sandbox)):
-            return "Error: Path is outside workspace directory."
         if not target.exists():
             return f"Error: Directory not found: {rel}"
         if not target.is_dir():
             return f"Error: Not a directory: {rel}"
 
         entries = []
+        base = self._base_dir
         for item in sorted(target.iterdir()):
-            rel_item = item.relative_to(self._sandbox)
+            try:
+                rel_item = item.relative_to(base)
+            except ValueError:
+                # Should not happen post-resolve, but skip rather than leak
+                # absolute paths if it does.
+                continue
             if item.is_dir():
                 entries.append(f"  {rel_item}/")
             else:
-                size = item.stat().st_size
+                try:
+                    size = item.stat().st_size
+                except OSError:
+                    size = -1
                 entries.append(f"  {rel_item}  ({size} bytes)")
 
         if not entries:

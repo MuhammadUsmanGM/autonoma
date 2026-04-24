@@ -92,6 +92,36 @@ class MemoryConfig:
 
 
 @dataclass
+class SandboxSettings:
+    """Security policy for the executor sandbox.
+
+    Mirrors :class:`autonoma.executor.sandbox.SandboxConfig` so users can
+    tune the sandbox from ``autonoma.yaml`` without reaching into Python
+    code. Defaults match the conservative posture in SandboxConfig.
+    """
+
+    timeout: float = 15.0
+    max_output_bytes: int = 10 * 1024 * 1024
+    max_memory_mb: int = 256
+    max_cpu_seconds: int = 30
+    max_processes: int = 64
+    max_file_size_mb: int = 50
+    allow_network: bool = False
+    env_allowlist: list[str] = field(default_factory=lambda: ["PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR"])
+    shell_allowed_binaries: list[str] = field(default_factory=list)
+    shell_allow_strings: bool = False
+    write_denied_extensions: list[str] = field(default_factory=lambda: [
+        ".exe", ".bat", ".cmd", ".ps1", ".psm1",
+        ".sh", ".bash", ".zsh", ".fish",
+        ".so", ".dylib", ".dll",
+        ".com", ".scr", ".msi",
+    ])
+    backend: str = "direct"
+    rate_limit_calls: int = 60
+    rate_limit_window: float = 60.0
+
+
+@dataclass
 class ObservabilityConfig:
     # "text" (human-readable, default) or "json" (one JSON object per line)
     log_format: str = "text"
@@ -115,6 +145,7 @@ class Config:
     channels: ChannelsConfig = field(default_factory=ChannelsConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
+    sandbox: SandboxSettings = field(default_factory=SandboxSettings)
     workspace_dir: str = "workspace"
     session_dir: str = ".session"
     log_level: str = "INFO"
@@ -134,6 +165,7 @@ def load_config(config_path: str | None = None) -> Config:
     gateway_data = data.get("gateway", {})
     llm_data = data.get("llm", {})
     observability_data = data.get("observability", {})
+    sandbox_data = data.get("sandbox", {})
 
     config = Config(
         name=data.get("name", "Autonoma"),
@@ -141,6 +173,9 @@ def load_config(config_path: str | None = None) -> Config:
         llm=LLMConfig(**{k: v for k, v in llm_data.items() if v is not None}),
         observability=ObservabilityConfig(
             **{k: v for k, v in observability_data.items() if v is not None}
+        ),
+        sandbox=SandboxSettings(
+            **{k: v for k, v in sandbox_data.items() if v is not None}
         ),
         workspace_dir=data.get("workspace_dir", "workspace"),
         session_dir=data.get("session_dir", ".session"),

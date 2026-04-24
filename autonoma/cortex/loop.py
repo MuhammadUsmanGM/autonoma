@@ -152,7 +152,7 @@ class AgentLoop:
                 tool_results: list[ToolResult] = []
                 for tc in response.tool_calls:
                     if self._tool_runner:
-                        result = await self._tool_runner.execute(tc)
+                        result = await self._tool_runner.execute(tc, session_id=session_id)
                     else:
                         result = ToolResult(
                             tool_use_id=tc.id,

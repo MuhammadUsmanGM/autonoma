@@ -15,7 +15,7 @@ from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.router import AgentRouter
 from autonoma.cortex.session import SessionManager
 from autonoma.cortex.trace_store import TraceStore
-from autonoma.executor.sandbox import Sandbox
+from autonoma.executor.sandbox import Sandbox, SandboxConfig
 from autonoma.executor.task_queue import TaskQueue, Priority
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.gateway.auth import AuthMiddleware
@@ -80,9 +80,40 @@ async def run(
     # 6. Create context assembler
     context_assembler = ContextAssembler(config.workspace_dir, memory_store)
 
-    # 7. Create executor (sandbox + tool runner)
-    sandbox = Sandbox(allowed_dirs=[config.workspace_dir], timeout=30.0)
-    tool_runner = ToolRunner(sandbox)
+    # 7. Create executor (sandbox + tool runner) from the configured policy.
+    s = config.sandbox
+    sandbox_config = SandboxConfig(
+        timeout=s.timeout,
+        max_output_bytes=s.max_output_bytes,
+        max_memory_mb=s.max_memory_mb,
+        max_cpu_seconds=s.max_cpu_seconds,
+        max_processes=s.max_processes,
+        max_file_size_mb=s.max_file_size_mb,
+        allow_network=s.allow_network,
+        env_allowlist=list(s.env_allowlist),
+        shell_allowed_binaries=list(s.shell_allowed_binaries),
+        shell_allow_strings=s.shell_allow_strings,
+        write_denied_extensions=list(s.write_denied_extensions),
+        backend=s.backend if s.backend in ("direct", "docker") else "direct",
+        rate_limit_calls=s.rate_limit_calls,
+        rate_limit_window=s.rate_limit_window,
+    )
+    # Validate backend choice early — a typo in autonoma.yaml should fail
+    # at startup, not on the first tool call.
+    from autonoma.executor.backends import get_backend
+    backend_cls = get_backend(sandbox_config.backend)
+    if backend_cls.name == "docker":
+        # Surfaces the NotImplementedError with guidance before we spin up
+        # any channels or touch the LLM.
+        backend_cls()
+    sandbox = Sandbox(
+        allowed_dirs=[config.workspace_dir],
+        config=sandbox_config,
+    )
+    tool_runner = ToolRunner(
+        sandbox,
+        audit_log_path=str(Path(config.session_dir) / "audit.log"),
+    )
 
     # 8a. Create trace store
     trace_store = TraceStore(persist_dir=str(Path(config.session_dir) / "traces"))
@@ -95,7 +126,7 @@ async def run(
 
     # 8. Load skills and register tools
     skill_registry = SkillRegistry()
-    for tool in load_builtin_tools(workspace_dir=config.workspace_dir):
+    for tool in load_builtin_tools(workspace_dir=config.workspace_dir, sandbox=sandbox):
         tool_runner.register(tool)
         skill_registry.register(tool)
 

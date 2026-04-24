@@ -268,6 +268,23 @@ build_info = metrics_registry.gauge(
     "autonoma_build_info",
     "Constant 1, labeled with build metadata (version, python).",
 )
+sandbox_denied_total = metrics_registry.counter(
+    "autonoma_sandbox_denied_total",
+    "Sandbox policy denials, labeled by tool and reason.",
+)
+
+
+def record_sandbox_denial(tool: str, reason: str) -> None:
+    """Increment the sandbox-denial counter. Never raises.
+
+    Reason strings are truncated to 64 chars to keep label cardinality in
+    check — ops dashboards care about *classes* of denial (extension,
+    traversal, timeout), not the unique details of every attempt.
+    """
+    try:
+        sandbox_denied_total.inc(labels={"tool": tool, "reason": reason[:64]})
+    except Exception:  # pragma: no cover — metrics must never break a tool
+        pass
 
 
 def render_prometheus() -> str:

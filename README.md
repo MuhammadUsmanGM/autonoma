@@ -261,6 +261,91 @@ tracing UI.
 | `file_list` | List files and directories in the workspace |
 | `shell` | Execute shell commands in a sandboxed environment |
 
+## Security & Sandbox
+
+Tool execution goes through a single sandbox boundary (`autonoma/executor/sandbox.py`)
+that enforces path containment, env scrubbing, POSIX rlimits, output caps, and
+per-session rate limits. Every tool call — success, denial, timeout, or error —
+is appended as a JSON line to `<session_dir>/audit.log`.
+
+### Defaults
+
+* **Shell is disabled out of the box.** `shell_allowed_binaries` is an empty
+  list, which means the `shell` tool returns a "disabled" error until an
+  operator explicitly allowlists binaries.
+* **Argv mode only.** Tools pass `args: [binary, ...]`; shell-string mode with
+  metacharacter parsing is opt-in via `shell_allow_strings: true`.
+* **No network egress from subprocess tools.** `allow_network: false` strips
+  proxy env vars and blocks known network binaries (`curl`, `wget`, `nc`, ...)
+  from the shell allowlist at call time.
+* **Secrets never reach children.** API keys, bot tokens, and shell-hook vars
+  (`BASH_ENV`, `LD_PRELOAD`, ...) are stripped from subprocess env regardless
+  of `env_allowlist`.
+* **Path traversal is rejected.** All file paths resolve through
+  `path_safety.resolve_within`, which uses `Path.relative_to()` rather than a
+  prefix match — `../workspace_evil/secret` can't escape a `workspace/` base.
+* **Write extensions are gated.** Binaries, shared libraries, and shell
+  scripts land on a denylist (`.exe`, `.so`, `.dll`, `.sh`, ...).
+
+### YAML surface
+
+```yaml
+# autonoma.yaml
+sandbox:
+  timeout: 15.0                 # wall-clock seconds per tool call
+  max_output_bytes: 10485760    # combined stdout+stderr cap (bytes)
+  max_memory_mb: 256            # RLIMIT_AS (POSIX only)
+  max_cpu_seconds: 30           # RLIMIT_CPU (POSIX only)
+  max_processes: 64             # RLIMIT_NPROC (POSIX only)
+  max_file_size_mb: 50          # per-file write ceiling
+  allow_network: false          # subprocess network egress
+  env_allowlist: [PATH, HOME, LANG, LC_ALL, TZ, TMPDIR]
+  shell_allowed_binaries: []    # e.g. [ls, cat, grep, git] to enable shell
+  shell_allow_strings: false    # enables `command:` string mode + metachar check
+  write_denied_extensions:      # file_write refuses these suffixes
+    [.exe, .bat, .cmd, .ps1, .sh, .bash, .so, .dylib, .dll, .com, .scr, .msi]
+  backend: direct               # 'direct' (default) | 'docker' (scaffold — not yet implemented)
+  rate_limit_calls: 60          # per-session sliding-window cap
+  rate_limit_window: 60.0       # window in seconds
+```
+
+### Recommended profiles
+
+* **Read-only research agent** — leave `shell_allowed_binaries` empty. The
+  agent keeps `web_search`, `file_read`, `file_list`, and a `file_write` that
+  refuses binaries and respects `max_file_size_mb`.
+* **Developer agent** — `shell_allowed_binaries: [ls, cat, grep, git, npm]`,
+  still `shell_allow_strings: false`. Tool calls look like
+  `args: ["git", "status"]`; metacharacters in arguments are literal strings.
+* **Power-user shell** — add `shell_allow_strings: true` and include `sh` or
+  `bash` in the allowlist. This is the only path to pipes/redirects and is
+  only appropriate for fully trusted deployments.
+
+### Platform notes
+
+* **Linux/macOS**: memory, CPU, and process caps are enforced via
+  `resource.setrlimit` in a subprocess `preexec_fn`.
+* **Windows**: the `resource` module is absent — rlimits become advisory.
+  Wall-clock timeout and output caps still apply; the sandbox logs a
+  one-time warning on startup. For production on Windows, run Autonoma
+  inside WSL2 or a Linux container.
+* **Docker backend**: scaffolded but not implemented. Selecting
+  `backend: docker` raises a clear startup error. For container isolation
+  today, run the Autonoma process itself inside a container.
+
+### Audit log
+
+Every tool call appends a JSONL record:
+
+```json
+{"ts": "2026-04-24T10:12:03.412+00:00", "session_id": "s_abc", "tool": "shell",
+ "tool_use_id": "toolu_01...", "input_hash": "9f2a...", "status": "ok",
+ "elapsed_ms": 42, "error": null}
+```
+
+`input_hash` is a sha256-16 of the canonicalized input — enough to
+correlate replays without storing argument content.
+
 ## Tech Stack
 
 | Category | Technology |
