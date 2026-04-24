@@ -12,6 +12,7 @@ from autonoma.gateway.auth import AuthMiddleware
 from autonoma.gateway.channels.base import ChannelAdapter
 from autonoma.gateway.router import GatewayRouter
 from autonoma.config import GatewayConfig
+from autonoma.observability.metrics import set_channel_status
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class GatewayServer:
     def register_channel(self, channel: ChannelAdapter) -> None:
         self._channels[channel.name] = channel
         self._channel_status[channel.name] = {"status": "stopped", "last_error": None}
+        set_channel_status(channel.name, "stopped")
         logger.info("Registered channel: %s", channel.name)
 
     async def start(self) -> None:
@@ -74,6 +76,7 @@ class GatewayServer:
     def _start_channel_task(self, channel: ChannelAdapter) -> None:
         self._channel_status[channel.name]["status"] = "starting"
         self._channel_status[channel.name]["last_error"] = None
+        set_channel_status(channel.name, "starting")
         task = asyncio.create_task(
             self._run_channel(channel),
             name=f"channel-{channel.name}",
@@ -113,14 +116,18 @@ class GatewayServer:
         """Run a channel adapter with error logging so crashes aren't silent."""
         try:
             self._channel_status[channel.name]["status"] = "running"
+            set_channel_status(channel.name, "running")
             await channel.start(self._router.handle_message)
             self._channel_status[channel.name]["status"] = "stopped"
+            set_channel_status(channel.name, "stopped")
         except asyncio.CancelledError:
             self._channel_status[channel.name]["status"] = "stopped"
+            set_channel_status(channel.name, "stopped")
             raise
         except Exception as e:
             self._channel_status[channel.name]["status"] = "error"
             self._channel_status[channel.name]["last_error"] = str(e)
+            set_channel_status(channel.name, "error")
             from autonoma.alerts import alert_manager
             alert_manager.add_alert(
                 level="error",

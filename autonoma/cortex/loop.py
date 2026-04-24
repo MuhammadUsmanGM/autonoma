@@ -13,6 +13,13 @@ from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.memory.store import MemoryStore
 from autonoma.models.provider import LLMProvider
+from autonoma.observability import otel
+from autonoma.observability.metrics import (
+    agent_loop_duration_seconds,
+    agent_loop_total,
+    llm_cost_usd_total,
+    llm_tokens_total,
+)
 from autonoma.schema import (
     AgentResponse,
     LLMMessage,
@@ -73,6 +80,19 @@ class AgentLoop:
                 user_id=message.user_id,
             )
         self._current_live_trace = live_trace
+
+        # Start an OpenTelemetry span for this loop invocation. No-op when
+        # OTel is not configured, so there's no cost for local / dev runs.
+        otel_span = otel.start_trace_span(
+            "autonoma.agent.loop",
+            attributes={
+                "autonoma.session_id": session_id,
+                "autonoma.channel": message.channel,
+                "autonoma.user_id": message.user_id,
+                "autonoma.trace_id": live_trace.id if live_trace else "",
+            },
+        )
+        self._current_otel_span = otel_span
 
         try:
             # Stage 0: VALIDATE
@@ -184,6 +204,20 @@ class AgentLoop:
                 if self._trace_store:
                     await self._trace_store.persist_trace(live_trace)
 
+            self._record_loop_metric("completed", message.channel, elapsed)
+            otel.end_trace_span(
+                otel_span,
+                status="ok",
+                attributes={
+                    "autonoma.elapsed_seconds": elapsed,
+                    "autonoma.tool_calls": len(tool_trace),
+                    "autonoma.tokens_in": live_trace.tokens_in if live_trace else 0,
+                    "autonoma.tokens_out": live_trace.tokens_out if live_trace else 0,
+                    "autonoma.cost_usd": live_trace.cost_usd if live_trace else 0,
+                    "autonoma.model": live_trace.model if live_trace else "",
+                },
+            )
+
             return AgentResponse(
                 content=cleaned_response,
                 metadata={
@@ -194,16 +228,39 @@ class AgentLoop:
             )
 
         except Exception as e:
+            elapsed = time.time() - start_time
             logger.error("Agent loop error: %s", e, exc_info=True)
             self._observe(trace, "error", {"error": str(e)})
             if live_trace:
-                live_trace.fail(str(e), time.time() - start_time)
+                live_trace.fail(str(e), elapsed)
                 if self._trace_store:
                     await self._trace_store.persist_trace(live_trace)
+            self._record_loop_metric("error", message.channel, elapsed)
+            otel.end_trace_span(
+                otel_span,
+                status="error",
+                error=str(e),
+                attributes={"autonoma.elapsed_seconds": elapsed},
+            )
             return AgentResponse(
                 content="I encountered an error processing your message. Please try again.",
                 metadata={"error": str(e)},
             )
+
+    @staticmethod
+    def _record_loop_metric(status: str, channel: str, elapsed: float) -> None:
+        """Best-effort emission of agent loop outcome metrics.
+
+        Split out so it can be called from both success and error branches
+        without repeating the try/except defensive pattern.
+        """
+        try:
+            agent_loop_total.inc(labels={"status": status, "channel": channel or "unknown"})
+            agent_loop_duration_seconds.observe(
+                elapsed, labels={"status": status}
+            )
+        except Exception:  # pragma: no cover
+            pass
 
     async def _validate(self, message: Message) -> Message:
         """Stage 0: Input sanitization and basic prompt injection check."""
@@ -247,8 +304,7 @@ class AgentLoop:
         live trace is attached, or if the pricing lookup fails, we silently
         skip. Cost tracking is an observability nice-to-have — it must never
         take down the loop."""
-        live = getattr(self, "_current_live_trace", None)
-        if not live or not response.usage:
+        if not response.usage:
             return
         try:
             from autonoma.models.pricing import cost_for
@@ -256,7 +312,20 @@ class AgentLoop:
             tin = int(response.usage.get("input_tokens", 0) or 0)
             tout = int(response.usage.get("output_tokens", 0) or 0)
             cost = cost_for(model, tin, tout)
-            live.add_usage(tin, tout, cost, model=model)
+
+            live = getattr(self, "_current_live_trace", None)
+            if live:
+                live.add_usage(tin, tout, cost, model=model)
+
+            # Prometheus counters run even if there's no live trace (e.g.
+            # a background agent_prompt invocation with trace_store disabled).
+            model_label = model or "unknown"
+            if tin:
+                llm_tokens_total.inc(tin, labels={"direction": "input", "model": model_label})
+            if tout:
+                llm_tokens_total.inc(tout, labels={"direction": "output", "model": model_label})
+            if cost:
+                llm_cost_usd_total.inc(cost, labels={"model": model_label})
         except Exception as e:  # pragma: no cover — advisory only
             logger.debug("Cost tracking skipped: %s", e)
 
@@ -316,4 +385,11 @@ class AgentLoop:
         # Also populate the structured live trace if available
         if hasattr(self, '_current_live_trace') and self._current_live_trace:
             self._current_live_trace.add_span(stage, data)
+        # Mirror the stage as an OTel span event so pipeline shape is visible
+        # to any OpenTelemetry backend.
+        otel.add_trace_event(
+            getattr(self, "_current_otel_span", None),
+            f"stage.{stage}",
+            data,
+        )
         logger.debug("Stage [%s]: %s", stage, data)

@@ -176,6 +176,81 @@ Key environment variables:
 | `AUTONOMA_LLM_MODEL` | Model name override |
 | `AUTONOMA_LOG_LEVEL` | `debug`, `info`, `warning`, `error` |
 
+## Observability
+
+Autonoma ships production-grade observability out of the box — structured
+logs, Prometheus metrics, health probes, and optional OpenTelemetry tracing.
+
+### Health probes
+
+Always-on, no configuration required:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /healthz` | Liveness — returns 200 while the process is running. |
+| `GET /readyz` | Readiness — returns 200 once the HTTP server is accepting traffic, 503 during startup/shutdown. |
+
+### Structured JSON logs
+
+Set `AUTONOMA_LOG_FORMAT=json` (or `observability.log_format: json` in
+`autonoma.yaml`) to emit one JSON object per log line. Designed to be piped
+into Loki, Elasticsearch, CloudWatch, or any log aggregator that understands
+JSON.
+
+```json
+{"timestamp":"2026-04-24T12:34:56.789Z","level":"INFO","logger":"autonoma","message":"Processed message in 1.23s","asctime":"12:34:56"}
+```
+
+### Prometheus metrics
+
+A `/metrics` endpoint exposes the full metric set in Prometheus text format.
+Scrape it with any standard config:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: autonoma
+    static_configs:
+      - targets: ["localhost:8766"]
+```
+
+Exposed series:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `autonoma_agent_loop_total{status,channel}` | counter | Total agent loops by outcome. |
+| `autonoma_agent_loop_duration_seconds` | histogram | End-to-end loop latency. |
+| `autonoma_llm_tokens_total{direction,model}` | counter | Input / output tokens per model. |
+| `autonoma_llm_cost_usd_total{model}` | counter | Estimated LLM spend. |
+| `autonoma_tool_calls_total{tool,status}` | counter | Tool invocations (ok / timeout / error / denied). |
+| `autonoma_tool_duration_seconds{tool}` | histogram | Tool execution latency. |
+| `autonoma_channel_status{channel}` | gauge | 1=running, 0=stopped, -1=error. |
+| `autonoma_http_requests_total{method,path,status}` | counter | HTTP requests served. |
+| `autonoma_http_request_duration_seconds{method,path}` | histogram | Request latency. |
+| `autonoma_build_info{version,python}` | gauge | Build metadata. |
+
+Disable with `AUTONOMA_METRICS_ENABLED=false` if you want `/metrics` off.
+
+### OpenTelemetry (optional)
+
+Ship traces to any OTLP-compatible backend (Jaeger, Tempo, Honeycomb,
+Datadog, etc.). The core install stays lean — OTel only activates when both
+the optional dependency is installed and an endpoint is configured.
+
+```bash
+pip install autonoma[observability]
+export AUTONOMA_OTEL_ENDPOINT=http://localhost:4318/v1/traces
+export AUTONOMA_OTEL_SERVICE_NAME=autonoma-prod
+# Optional: authenticated collectors
+export AUTONOMA_OTEL_HEADERS="x-api-key=...,x-tenant=acme"
+autonoma
+```
+
+Each agent loop becomes one span (`autonoma.agent.loop`) with the 9 pipeline
+stages as span events, plus attributes for model, tokens, cost, and elapsed
+time — so you can slice latency by channel or cost by model directly in your
+tracing UI.
+
 ## Built-in Tools
 
 | Tool | Description |

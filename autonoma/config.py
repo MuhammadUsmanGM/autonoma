@@ -92,12 +92,29 @@ class MemoryConfig:
 
 
 @dataclass
+class ObservabilityConfig:
+    # "text" (human-readable, default) or "json" (one JSON object per line)
+    log_format: str = "text"
+    # When true, HTTP server exposes /metrics in Prometheus text exposition format.
+    metrics_enabled: bool = True
+    # OpenTelemetry OTLP/HTTP endpoint (e.g. "http://localhost:4318/v1/traces").
+    # Empty = disabled. Requires the `opentelemetry-sdk` optional dep to be
+    # installed; if it's missing we log once and continue without OTel.
+    otel_endpoint: str = ""
+    otel_service_name: str = "autonoma"
+    # Optional comma-separated headers appended to OTLP requests
+    # (e.g. "x-api-key=abc,x-tenant=acme"). Used by hosted collectors.
+    otel_headers: str = ""
+
+
+@dataclass
 class Config:
     name: str = "Autonoma"
     gateway: GatewayConfig = field(default_factory=GatewayConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     channels: ChannelsConfig = field(default_factory=ChannelsConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     workspace_dir: str = "workspace"
     session_dir: str = ".session"
     log_level: str = "INFO"
@@ -116,11 +133,15 @@ def load_config(config_path: str | None = None) -> Config:
     # Build nested config from YAML data
     gateway_data = data.get("gateway", {})
     llm_data = data.get("llm", {})
+    observability_data = data.get("observability", {})
 
     config = Config(
         name=data.get("name", "Autonoma"),
         gateway=GatewayConfig(**gateway_data),
         llm=LLMConfig(**{k: v for k, v in llm_data.items() if v is not None}),
+        observability=ObservabilityConfig(
+            **{k: v for k, v in observability_data.items() if v is not None}
+        ),
         workspace_dir=data.get("workspace_dir", "workspace"),
         session_dir=data.get("session_dir", ".session"),
         log_level=data.get("log_level", "INFO"),
@@ -171,6 +192,21 @@ def load_config(config_path: str | None = None) -> Config:
 
     if token := os.getenv("AUTONOMA_REST_API_TOKEN"):
         config.channels.rest.api_token = token
+
+    # --- Observability overrides ---
+
+    if log_format := os.getenv("AUTONOMA_LOG_FORMAT"):
+        config.observability.log_format = log_format.lower()
+    if (metrics_env := os.getenv("AUTONOMA_METRICS_ENABLED")) is not None:
+        config.observability.metrics_enabled = metrics_env.lower() not in (
+            "0", "false", "no", "off", ""
+        )
+    if endpoint := os.getenv("AUTONOMA_OTEL_ENDPOINT"):
+        config.observability.otel_endpoint = endpoint
+    if service_name := os.getenv("AUTONOMA_OTEL_SERVICE_NAME"):
+        config.observability.otel_service_name = service_name
+    if headers := os.getenv("AUTONOMA_OTEL_HEADERS"):
+        config.observability.otel_headers = headers
 
     return config
 

@@ -6,10 +6,16 @@ import asyncio
 import json
 import logging
 import mimetypes
+import time
 from typing import Any, Callable, Awaitable
 from urllib.parse import parse_qs, unquote_plus
 from pathlib import Path
 from datetime import datetime
+
+from autonoma.observability.metrics import (
+    http_request_duration_seconds,
+    http_requests_total,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +57,53 @@ class HTTPServer:
     Now supports serving static files from a directory as a fallback.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8766, static_dir: str | Path | None = None):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8766,
+        static_dir: str | Path | None = None,
+        metrics_enabled: bool = True,
+    ):
         self._host = host
         self._port = port
         self._static_dir = Path(static_dir) if static_dir else None
         self._routes: dict[str, RouteHandler] = {}
         self._server: asyncio.Server | None = None
+        # Readiness is flipped on by start(); /readyz returns 503 until then
+        # so orchestrators (k8s, Nomad) wait for the event loop + routes to be
+        # fully wired before sending traffic.
+        self._ready = False
+        self._register_core_routes(metrics_enabled)
+
+    def _register_core_routes(self, metrics_enabled: bool) -> None:
+        """Register always-on observability routes.
+
+        These are built into the HTTP server itself (not dashboard_api) so
+        they work identically in headless mode, under the TUI, and in
+        embedded deployments — even before dashboard_api has been wired up.
+        """
+        async def handle_healthz(request):
+            return 200, {"Content-Type": "application/json"}, json.dumps({"status": "ok"})
+
+        async def handle_readyz(request):
+            if self._ready:
+                return 200, {"Content-Type": "application/json"}, json.dumps({"status": "ready"})
+            return 503, {"Content-Type": "application/json"}, json.dumps({"status": "not_ready"})
+
+        self.add_route("GET", "/healthz", handle_healthz)
+        self.add_route("GET", "/readyz", handle_readyz)
+
+        if metrics_enabled:
+            async def handle_metrics(request):
+                from autonoma.observability.metrics import render_prometheus
+                body = render_prometheus()
+                # text/plain per Prometheus 0.0.4 exposition format
+                return (
+                    200,
+                    {"Content-Type": "text/plain; version=0.0.4; charset=utf-8"},
+                    body,
+                )
+            self.add_route("GET", "/metrics", handle_metrics)
 
     def add_route(self, method: str, path: str, handler: RouteHandler) -> None:
         """Register a route handler. Key format: 'POST /api/chat'."""
@@ -71,8 +118,10 @@ class HTTPServer:
         logger.info("HTTP server listening on http://%s:%d", self._host, self._port)
         if self._static_dir:
             logger.info("Serving static files from: %s", self._static_dir)
+        self._ready = True
 
     async def stop(self) -> None:
+        self._ready = False
         if self._server:
             self._server.close()
             await self._server.wait_closed()
@@ -107,12 +156,18 @@ class HTTPServer:
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
+        start = time.perf_counter()
+        method = "UNKNOWN"
+        status_code = 0
+        path_label = "unknown"
         try:
             request = await self._read_request(reader)
             if not request:
                 writer.close()
                 return
 
+            method = request["method"]
+            path_label = self._path_label(request["path"])
             origin = request.get("headers", {}).get("origin", "")
             cors = self._cors_headers(origin)
 
@@ -120,8 +175,9 @@ class HTTPServer:
             if request["method"] == "OPTIONS":
                 self._write_response(writer, 204, {**cors, "Content-Length": "0"}, "")
                 await writer.drain()
+                status_code = 204
                 return
-            
+
             # Record webhook payloads before they execute
             if "/api/chat" in request["path"] or "/webhook" in request["path"]:
                 _record_webhook(request)
@@ -132,17 +188,22 @@ class HTTPServer:
                 status, headers, body = await handler(request)
                 headers.update(cors)
                 self._write_response(writer, status, headers, body)
+                status_code = status
             elif request["method"] == "GET" and self._static_dir:
                 # Static file fallback
                 await self._serve_static(request["path"], writer)
+                # Static responses are written raw; attribute them as 200.
+                status_code = 200
             else:
                 status, headers, body = 404, {"Content-Type": "application/json"}, json.dumps({"error": "Not found"})
                 headers.update(cors)
                 self._write_response(writer, status, headers, body)
+                status_code = status
 
             await writer.drain()
         except Exception as e:
             logger.error("HTTP handler error: %s", e, exc_info=True)
+            status_code = 500
             try:
                 self._write_response(
                     writer, 500,
@@ -158,6 +219,49 @@ class HTTPServer:
                 await writer.wait_closed()
             except Exception:
                 pass
+            self._record_request_metrics(method, path_label, status_code, start)
+
+    def _path_label(self, raw_path: str) -> str:
+        """Collapse a request path into a metric label.
+
+        Unbounded cardinality would blow up Prometheus; we route matched
+        API paths to their canonical form (e.g. ``/api/chat``), send other
+        matched routes as their template, and bucket everything else as
+        ``static`` or ``unknown`` so label combinatorics stay finite.
+        """
+        clean = raw_path.split("?")[0].rstrip("/") or "/"
+        for route_key in self._routes:
+            try:
+                _, r_path = route_key.split(" ", 1)
+            except ValueError:
+                continue
+            if clean == r_path:
+                return r_path
+            if clean.startswith(r_path) and (
+                len(clean) == len(r_path) or clean[len(r_path)] == "/"
+            ):
+                return r_path
+        if self._static_dir:
+            return "static"
+        return "unknown"
+
+    @staticmethod
+    def _record_request_metrics(
+        method: str, path_label: str, status: int, start: float
+    ) -> None:
+        try:
+            labels = {
+                "method": method,
+                "path": path_label,
+                "status": str(status or 0),
+            }
+            http_requests_total.inc(labels=labels)
+            http_request_duration_seconds.observe(
+                time.perf_counter() - start,
+                labels={"method": method, "path": path_label},
+            )
+        except Exception:  # pragma: no cover — metrics must never block requests
+            pass
 
     async def _serve_static(self, path: str, writer: asyncio.StreamWriter) -> None:
         """Serve a file from static_dir, with SPA fallback to index.html."""

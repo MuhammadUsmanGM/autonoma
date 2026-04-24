@@ -42,16 +42,21 @@ async def run(
     # 1. Load config
     config = load_config(config_path)
 
-    # Configure logging
+    # Configure logging — format is driven by observability config (text|json).
     level = getattr(logging, (log_level or config.log_level).upper(), logging.INFO)
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
-    
-    from autonoma.logs import setup_log_buffer
+    from autonoma.logs import configure_root_logger, setup_log_buffer
+    configure_root_logger(level, config.observability.log_format)
     setup_log_buffer()
+
+    # Initialize OpenTelemetry if configured. No-op when the OTel SDK isn't
+    # installed or the endpoint is blank, so core installs are unaffected.
+    if config.observability.otel_endpoint:
+        from autonoma.observability import otel
+        otel.init(
+            endpoint=config.observability.otel_endpoint,
+            service_name=config.observability.otel_service_name,
+            headers=config.observability.otel_headers,
+        )
 
     # 2. Validate API key
     if not config.llm.api_key:
@@ -115,10 +120,26 @@ async def run(
     # Look for dashboard/dist relative to the project root
     static_dir = Path(__file__).parent.parent / "dashboard" / "dist"
     http_server = HTTPServer(
-        host=config.gateway.host, 
+        host=config.gateway.host,
         port=config.gateway.http_port,
-        static_dir=static_dir if static_dir.exists() else None
+        static_dir=static_dir if static_dir.exists() else None,
+        metrics_enabled=config.observability.metrics_enabled,
     )
+
+    # Seed build_info so `autonoma_build_info` is always populated.
+    try:
+        import sys as _sys
+        from autonoma import __version__ as _version
+        from autonoma.observability.metrics import build_info as _build_info
+        _build_info.set(
+            1,
+            labels={
+                "version": _version,
+                "python": f"{_sys.version_info.major}.{_sys.version_info.minor}",
+            },
+        )
+    except Exception:
+        pass
 
     # 13. Create gateway server
     auth = AuthMiddleware()

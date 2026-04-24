@@ -4,13 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Literal
 
 from autonoma.executor.sandbox import Sandbox
 from autonoma.executor.tools.base import BaseTool, PermissionLevel
+from autonoma.observability.metrics import tool_calls_total, tool_duration_seconds
 from autonoma.schema import ToolCall, ToolResult
 
 logger = logging.getLogger(__name__)
+
+
+def _record_tool_metric(tool_name: str, status: str, started_at: float) -> None:
+    """Best-effort metric emission — never raise into the caller."""
+    try:
+        tool_calls_total.inc(labels={"tool": tool_name, "status": status})
+        tool_duration_seconds.observe(
+            time.perf_counter() - started_at,
+            labels={"tool": tool_name},
+        )
+    except Exception:  # pragma: no cover — defensive
+        pass
 
 
 class ToolRunner:
@@ -71,9 +85,11 @@ class ToolRunner:
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         """Execute a tool call and return the result."""
+        started_at = time.perf_counter()
         tool = self._tools.get(tool_call.name)
         if not tool:
             logger.warning("Unknown tool requested: %s", tool_call.name)
+            _record_tool_metric(tool_call.name, "unknown", started_at)
             return ToolResult(
                 tool_use_id=tool_call.id,
                 content=f"Error: Unknown tool '{tool_call.name}'. Available tools: {', '.join(self._tools.keys())}",
@@ -84,6 +100,7 @@ class ToolRunner:
         perm_error = self._check_permissions(tool)
         if perm_error:
             logger.warning("Permission denied for tool %s: %s", tool_call.name, perm_error)
+            _record_tool_metric(tool_call.name, "denied", started_at)
             return ToolResult(
                 tool_use_id=tool_call.id,
                 content=f"Error: {perm_error}",
@@ -99,6 +116,7 @@ class ToolRunner:
                 timeout=self._sandbox.timeout,
             )
             logger.info("Tool %s completed successfully", tool_call.name)
+            _record_tool_metric(tool_call.name, "ok", started_at)
             return ToolResult(
                 tool_use_id=tool_call.id,
                 content=result,
@@ -107,6 +125,7 @@ class ToolRunner:
         except asyncio.TimeoutError:
             msg = f"Tool '{tool_call.name}' timed out after {self._sandbox.timeout}s"
             logger.error(msg)
+            _record_tool_metric(tool_call.name, "timeout", started_at)
             return ToolResult(
                 tool_use_id=tool_call.id,
                 content=msg,
@@ -115,6 +134,7 @@ class ToolRunner:
         except Exception as e:
             msg = f"Tool '{tool_call.name}' failed: {e}"
             logger.error(msg, exc_info=True)
+            _record_tool_metric(tool_call.name, "error", started_at)
             return ToolResult(
                 tool_use_id=tool_call.id,
                 content=msg,
