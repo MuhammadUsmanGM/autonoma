@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autonoma"
-version = "1.0.0"
+version = "1.0.1"
 description = "Autonoma — Open-source AI agent platform. Build, deploy, and run digital employees."
 readme = "README.md"
 license = "MIT"

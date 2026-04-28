@@ -1,6 +1,6 @@
 {
   "name": "autonoma-ai",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI agent platform with multi-channel support, intelligent memory, and real-time dashboard",
   "bin": {
     "autonoma": "./bin/autonoma.js"

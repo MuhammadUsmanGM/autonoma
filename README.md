@@ -39,7 +39,10 @@ A premium React + TypeScript HUD with context-aware **Dual-Theme support** (Ligh
 SQLite + FTS5 powered memory with **BM25 ranked retrieval**. Memories are scored by relevance, importance, and recency. Features automatic deduplication and importance decay.
 
 ### Tool execution & Sandbox
-Secure execution environment with built-in tools for web search, file operations, and shell command chaining in isolated workspaces.
+Secure execution environment with built-in tools for web search, file operations, and shell command chaining in isolated workspaces. **Hardened by default**: shell is off until binaries are allowlisted, path traversal is rejected via `Path.relative_to()` containment, secrets and shell-hook env vars never reach child processes, and every tool call is appended to a per-session JSONL audit log.
+
+### Production Observability
+Structured JSON logs, a Prometheus `/metrics` endpoint (agent loops, LLM tokens + cost per model, tool latency, channel status, HTTP latency), always-on `/healthz` and `/readyz` probes, and optional **OpenTelemetry** tracing — each agent loop becomes one span with the 9 pipeline stages as events.
 
 ## Architecture
 
