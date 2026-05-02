@@ -22,6 +22,18 @@ llm:
 #     bridge_url: "http://localhost:3001"
 #     webhook_path: "/webhook/whatsapp"
 
+# Connectors (Google Calendar, OneDrive, ...).
+# Credentials come from env (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET,
+# MS_CLIENT_ID / MS_CLIENT_SECRET) or the fields below. Connect / log out
+# each account from the dashboard /connectors page or the TUI menu.
+# connectors:
+#   redirect_base_url: ""   # auto = http://<gateway.host>:<gateway.http_port>
+#   google_calendar:
+#     enabled: true
+#   onedrive:
+#     enabled: false
+#     tenant: "common"
+
 workspace_dir: "workspace"
 session_dir: ".session"
 log_level: "INFO"

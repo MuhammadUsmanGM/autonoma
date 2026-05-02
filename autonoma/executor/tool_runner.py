@@ -36,10 +36,30 @@ from autonoma.schema import ToolCall, ToolResult
 logger = logging.getLogger(__name__)
 
 
+def _connector_for_tool(tool_name: str) -> str:
+    """Map a tool name to its owning connector (or ``""`` for built-ins).
+
+    Keeps cardinality bounded: every connector tool gets exactly one label
+    value, and built-ins all collapse to ``""`` so dashboards can filter
+    "connector calls only" with a single ``{connector!=""}`` matcher.
+    """
+    if tool_name.startswith("calendar_"):
+        return "google_calendar"
+    if tool_name.startswith("onedrive_"):
+        return "onedrive"
+    return ""
+
+
 def _record_tool_metric(tool_name: str, status: str, started_at: float) -> None:
     """Best-effort metric emission — never raise into the caller."""
     try:
-        tool_calls_total.inc(labels={"tool": tool_name, "status": status})
+        tool_calls_total.inc(
+            labels={
+                "tool": tool_name,
+                "status": status,
+                "connector": _connector_for_tool(tool_name),
+            }
+        )
         tool_duration_seconds.observe(
             time.perf_counter() - started_at,
             labels={"tool": tool_name},
@@ -158,6 +178,9 @@ class ToolRunner:
             "Registered tool: %s (level=%s, net=%s, fs=%s, shell=%s)",
             tool.name, perm.level, perm.network, perm.filesystem, perm.shell,
         )
+
+    def unregister(self, tool_name: str) -> bool:
+        return self._tools.pop(tool_name, None) is not None
 
     def get_tool(self, name: str) -> BaseTool | None:
         return self._tools.get(name)

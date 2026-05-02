@@ -343,6 +343,7 @@ class AutonomaTUI:
             ("Live logs", self._logs_viewer),
             ("Manage configuration", self._manage_menu),
             ("Manage channels", self._manage_channels),
+            ("Manage connectors", self._manage_connectors),
             ("Open web dashboard", self._open_dashboard),
             ("Check status", self._show_status),
             ("Restart Autonoma", self._restart_agent),
@@ -600,6 +601,162 @@ class AutonomaTUI:
             except BackSignal:
                 pass
         self._with_agent_stopped(body)
+
+    # ----- Connectors menu (no agent restart needed — HTTP-only) -----
+
+    def _manage_connectors(self) -> None:
+        """List connectors, kick off OAuth, and log out.
+
+        Talks to the running agent over the local HTTP API instead of poking
+        the registry directly: that way the connect/disconnect flow works the
+        same whether the user is in the TUI or the dashboard, and we don't
+        need to stop the agent the way ``_channel_menu`` does — there is no
+        on-disk config to write here, only the encrypted token store the
+        running gateway already owns.
+        """
+        cfg = self._safe_load_config()
+        host = cfg.gateway.host if cfg else "127.0.0.1"
+        port = cfg.gateway.http_port if cfg else 8766
+        base = f"http://{host}:{port}"
+
+        while True:
+            entries = self._fetch_connectors(base)
+            if entries is None:
+                self.console.print(
+                    "[red]Could not reach the gateway HTTP API. Is the agent running?[/]"
+                )
+                self._pause()
+                return
+            if not entries:
+                self.console.print(
+                    "[yellow]No connectors are registered. Set GOOGLE_CLIENT_ID / "
+                    "MS_CLIENT_ID (and matching secrets) in your .env, then enable "
+                    "the connector in autonoma.yaml.[/]"
+                )
+                self._pause()
+                return
+
+            labels: list[str] = []
+            for e in entries:
+                m = e["manifest"]
+                s = e["status"]
+                state = s.get("state", "?")
+                acct = s.get("account_label") or s.get("account_id") or ""
+                tail = f" — {acct}" if state == "connected" and acct else ""
+                labels.append(f"{m['display_name']}  [{state}]{tail}")
+            labels.append("Back")
+
+            idx = self._arrow_select(
+                title="[bold]Connectors[/]",
+                items=labels,
+                header_renderable=self._banner_renderable,
+                allow_back=True,
+            )
+            if idx is None or idx == len(labels) - 1:
+                return
+            chosen = entries[idx]
+            self._connector_actions(base, chosen)
+
+    def _connector_actions(self, base: str, entry: dict) -> None:
+        name = entry["manifest"]["name"]
+        display = entry["manifest"]["display_name"]
+        connected = entry["status"].get("state") == "connected"
+        items = (
+            [f"Sign out of {display}", "Back"]
+            if connected
+            else [f"Connect {display}", "Back"]
+        )
+        idx = self._arrow_select(
+            title=f"[bold]{display}[/]",
+            items=items,
+            header_renderable=self._banner_renderable,
+            allow_back=True,
+        )
+        if idx is None or idx == 1:
+            return
+        if connected:
+            ok, err = self._http_post(f"{base}/api/connectors/{name}/disconnect")
+            if ok:
+                self.console.print(f"[green]Signed out of {display}.[/]")
+            else:
+                self.console.print(f"[red]Disconnect failed:[/] {err}")
+        else:
+            ok, payload = self._http_post(f"{base}/api/connectors/{name}/connect")
+            if not ok:
+                self.console.print(f"[red]Connect failed:[/] {payload}")
+            else:
+                url = (payload or {}).get("auth_url", "")
+                if not url:
+                    self.console.print("[red]No auth URL returned.[/]")
+                else:
+                    self.console.print(
+                        f"[cyan]Open this URL in your browser to authorize "
+                        f"{display}:[/]\n{url}"
+                    )
+                    try:
+                        webbrowser.open(url)
+                    except Exception:
+                        pass
+                    self.console.print(
+                        "[dim]Waiting for the OAuth callback to complete…[/]"
+                    )
+                    self._wait_for_connection(base, name, timeout=180.0)
+        self._pause()
+
+    def _fetch_connectors(self, base: str):
+        ok, data = self._http_get(f"{base}/api/connectors")
+        return data if ok else None
+
+    def _wait_for_connection(self, base: str, name: str, timeout: float) -> None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            ok, data = self._http_get(f"{base}/api/connectors")
+            if ok and isinstance(data, list):
+                for e in data:
+                    if e["manifest"]["name"] == name:
+                        state = e["status"].get("state")
+                        if state == "connected":
+                            label = e["status"].get("account_label", "")
+                            self.console.print(
+                                f"[green]✓ Connected as {label or 'authorized account'}.[/]"
+                            )
+                            return
+                        if state == "error":
+                            self.console.print(
+                                f"[red]Connection failed:[/] {e['status'].get('last_error','unknown')}"
+                            )
+                            return
+            time.sleep(1.0)
+        self.console.print("[yellow]Timed out waiting for the OAuth callback.[/]")
+
+    def _http_get(self, url: str):
+        import urllib.error
+        import urllib.request
+        try:
+            with urllib.request.urlopen(url, timeout=5.0) as resp:
+                return True, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            try:
+                return False, json.loads(e.read().decode("utf-8")).get("error", str(e))
+            except Exception:
+                return False, str(e)
+        except Exception as e:
+            return False, str(e)
+
+    def _http_post(self, url: str):
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(url, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                return True, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            try:
+                return False, json.loads(e.read().decode("utf-8")).get("error", str(e))
+            except Exception:
+                return False, str(e)
+        except Exception as e:
+            return False, str(e)
 
     def _with_agent_stopped(self, body) -> None:
         """Run `body()` with the agent stopped, then restart it if it had

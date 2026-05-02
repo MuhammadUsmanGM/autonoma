@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell, Globe, Terminal, Webhook } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Brain, History, Activity, Settings, ListTodo, Sparkles, Bell, Globe, Plug, Terminal, Webhook } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNotifications } from '../contexts/NotificationsContext'
 import LiveLogStream from './LiveLogStream'
@@ -128,6 +128,28 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
             )
           })()}
           
+          {(() => {
+            const active = current === 'connectors'
+            return (
+              <button
+                onClick={() => onChange('connectors')}
+                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
+                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="active-nav"
+                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <Plug size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+                <span className="relative z-10">Connectors</span>
+              </button>
+            )
+          })()}
+
           {(() => {
             const active = current === 'logs'
             return (

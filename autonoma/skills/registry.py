@@ -20,6 +20,12 @@ class SkillRegistry:
         self._tools[tool.name] = tool
         logger.info("Registered skill: %s", tool.name)
 
+    def unregister(self, tool_name: str) -> bool:
+        removed = self._tools.pop(tool_name, None) is not None
+        if removed:
+            logger.info("Unregistered skill: %s", tool_name)
+        return removed
+
     def get_tool(self, name: str) -> BaseTool | None:
         return self._tools.get(name)
 

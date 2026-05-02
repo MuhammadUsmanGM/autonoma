@@ -31,6 +31,7 @@ from autonoma.memory.store import MemoryStore
 from autonoma.models import create_provider
 from autonoma.skills.loader import load_builtin_tools
 from autonoma.skills.registry import SkillRegistry
+from autonoma.connectors.registry import ConnectorRegistry
 
 logger = logging.getLogger("autonoma")
 
@@ -135,6 +136,15 @@ async def run(
 
     logger.info("Tools available: %s", ", ".join(skill_registry.get_tool_names()))
 
+    # 8d. Connectors (Google Calendar, OneDrive, ...). Each one owns its OAuth
+    # flow + persisted tokens; their tools are added to the runner only while
+    # an account is connected.
+    connector_registry = _build_connector_registry(config)
+    _refresh_connector_tools(connector_registry, tool_runner, skill_registry)
+    connector_registry.on_tools_changed(
+        lambda: _refresh_connector_tools(connector_registry, tool_runner, skill_registry)
+    )
+
     # 8c. Contact registry + conversation state store. Both are independent
     # SQLite files so they can be wiped or migrated separately from memory.
     contact_store = ContactStore(config.relationship)
@@ -236,6 +246,8 @@ async def run(
         logger.info("Gmail channel enabled")
 
     # 16. Register dashboard API endpoints
+    from autonoma.gateway.channels.connectors_api import register_connector_routes
+    register_connector_routes(http_server, connector_registry)
     from autonoma.gateway.channels.dashboard_api import register_dashboard_routes
     register_dashboard_routes(
         http_server, memory_store, session_manager,
@@ -287,6 +299,83 @@ async def run(
             await server.stop()
 
     logger.info("Autonoma shut down cleanly.")
+
+
+def _build_connector_registry(config) -> ConnectorRegistry:
+    """Construct the connector registry from current config.
+
+    A connector is registered only when its credentials are present — without
+    client_id/client_secret the OAuth flow can't even start, so registering
+    it would only put a permanently-broken entry in the dashboard.
+    """
+    from autonoma.connectors.token_store import TokenStore
+
+    cc = config.connectors
+    registry = ConnectorRegistry()
+    store = TokenStore(db_path=cc.db_path, key_path=cc.key_path)
+    # The state-token secret is the same key the token store uses; reusing it
+    # avoids a second long-lived secret on disk.
+    state_secret = open(cc.key_path, "rb").read().strip()
+    base = (
+        cc.redirect_base_url.rstrip("/")
+        or f"http://{config.gateway.host}:{config.gateway.http_port}"
+    )
+
+    if cc.google_calendar.enabled and cc.google_calendar.client_id:
+        from autonoma.connectors.google_calendar import GoogleCalendarConnector
+        registry.register(
+            GoogleCalendarConnector(
+                cc.google_calendar,
+                store,
+                redirect_uri=f"{base}/oauth/google_calendar/callback",
+                state_secret=state_secret,
+            )
+        )
+    if cc.onedrive.enabled and cc.onedrive.client_id:
+        from autonoma.connectors.onedrive import OneDriveConnector
+        registry.register(
+            OneDriveConnector(
+                cc.onedrive,
+                store,
+                redirect_uri=f"{base}/oauth/onedrive/callback",
+                state_secret=state_secret,
+            )
+        )
+    return registry
+
+
+def _push_connector_metrics(registry: ConnectorRegistry) -> None:
+    """Mirror connector states into Prometheus."""
+    from autonoma.observability.metrics import set_connector_status
+    for name, status in registry.statuses().items():
+        set_connector_status(name, status.state)
+
+
+def _refresh_connector_tools(
+    registry: ConnectorRegistry,
+    tool_runner,
+    skill_registry,
+) -> None:
+    """Resync ToolRunner + SkillRegistry to the live set of connector tools.
+
+    Called once at boot, then again whenever a connector is connected /
+    disconnected. We track which tools came from connectors via a name prefix
+    (``calendar_*``, ``onedrive_*``) so we don't accidentally remove built-in
+    tools that share neither prefix.
+    """
+    desired = {t.name: t for t in registry.active_tools()}
+    desired_names = set(desired)
+    # Drop connector-owned tools that are no longer active.
+    for name in list(skill_registry.get_tool_names()):
+        is_connector_tool = name.startswith(("calendar_", "onedrive_"))
+        if is_connector_tool and name not in desired_names:
+            tool_runner.unregister(name)
+            skill_registry.unregister(name)
+    # Add / refresh active connector tools.
+    for tool in desired.values():
+        tool_runner.register(tool)
+        skill_registry.register(tool)
+    _push_connector_metrics(registry)
 
 
 def cli_entry() -> None:

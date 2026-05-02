@@ -183,6 +183,49 @@ class TriageConfig:
 
 
 @dataclass
+class GoogleCalendarConnectorConfig:
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: list[str] = field(default_factory=lambda: [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar.events",
+    ])
+
+
+@dataclass
+class OneDriveConnectorConfig:
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    # `common` supports both personal MSA and work/school accounts.
+    tenant: str = "common"
+    scopes: list[str] = field(default_factory=lambda: [
+        "offline_access",
+        "User.Read",
+        "Files.ReadWrite",
+    ])
+
+
+@dataclass
+class ConnectorsConfig:
+    """Third-party connectors (Google Calendar, OneDrive, ...)."""
+
+    db_path: str = "workspace/connectors.db"
+    key_path: str = "workspace/.connector_key"
+    # Public base URL the OAuth provider should redirect to. Defaults to the
+    # local gateway HTTP port; override when running behind a tunnel.
+    redirect_base_url: str = ""
+    google_calendar: GoogleCalendarConnectorConfig = field(
+        default_factory=GoogleCalendarConnectorConfig
+    )
+    onedrive: OneDriveConnectorConfig = field(default_factory=OneDriveConnectorConfig)
+
+
+@dataclass
 class ObservabilityConfig:
     # "text" (human-readable, default) or "json" (one JSON object per line)
     log_format: str = "text"
@@ -210,6 +253,7 @@ class Config:
     triage: TriageConfig = field(default_factory=TriageConfig)
     relationship: RelationshipConfig = field(default_factory=RelationshipConfig)
     conversation_state: ConversationStateConfig = field(default_factory=ConversationStateConfig)
+    connectors: ConnectorsConfig = field(default_factory=ConnectorsConfig)
     workspace_dir: str = "workspace"
     session_dir: str = ".session"
     log_level: str = "INFO"
@@ -233,6 +277,7 @@ def load_config(config_path: str | None = None) -> Config:
     triage_data = data.get("triage", {})
     relationship_data = data.get("relationship", {})
     conversation_state_data = data.get("conversation_state", {})
+    connectors_data = data.get("connectors", {}) or {}
 
     config = Config(
         name=data.get("name", "Autonoma"),
@@ -253,6 +298,7 @@ def load_config(config_path: str | None = None) -> Config:
         conversation_state=ConversationStateConfig(
             **{k: v for k, v in conversation_state_data.items() if v is not None}
         ),
+        connectors=_load_connectors_config(connectors_data),
         workspace_dir=data.get("workspace_dir", "workspace"),
         session_dir=data.get("session_dir", ".session"),
         log_level=data.get("log_level", "INFO"),
@@ -339,7 +385,47 @@ def load_config(config_path: str | None = None) -> Config:
     if (state_env := os.getenv("AUTONOMA_STATE_ENABLED")) is not None:
         config.conversation_state.enabled = state_env.lower() not in ("0", "false", "no", "off", "")
 
+    # --- Connector overrides ---
+
+    if cid := os.getenv("GOOGLE_CLIENT_ID"):
+        config.connectors.google_calendar.client_id = cid
+    if cs := os.getenv("GOOGLE_CLIENT_SECRET"):
+        config.connectors.google_calendar.client_secret = cs
+    if (gc_env := os.getenv("AUTONOMA_GCAL_ENABLED")) is not None:
+        config.connectors.google_calendar.enabled = gc_env.lower() not in (
+            "0", "false", "no", "off", ""
+        )
+    if cid := os.getenv("MS_CLIENT_ID"):
+        config.connectors.onedrive.client_id = cid
+    if cs := os.getenv("MS_CLIENT_SECRET"):
+        config.connectors.onedrive.client_secret = cs
+    if tenant := os.getenv("MS_TENANT"):
+        config.connectors.onedrive.tenant = tenant
+    if (od_env := os.getenv("AUTONOMA_ONEDRIVE_ENABLED")) is not None:
+        config.connectors.onedrive.enabled = od_env.lower() not in (
+            "0", "false", "no", "off", ""
+        )
+    if base := os.getenv("AUTONOMA_CONNECTOR_REDIRECT_BASE"):
+        config.connectors.redirect_base_url = base
+
     return config
+
+
+def _load_connectors_config(data: dict) -> ConnectorsConfig:
+    """Build :class:`ConnectorsConfig` from a YAML sub-dict."""
+    gc = data.get("google_calendar", {}) or {}
+    od = data.get("onedrive", {}) or {}
+    return ConnectorsConfig(
+        db_path=data.get("db_path", "workspace/connectors.db"),
+        key_path=data.get("key_path", "workspace/.connector_key"),
+        redirect_base_url=data.get("redirect_base_url", ""),
+        google_calendar=GoogleCalendarConnectorConfig(
+            **{k: v for k, v in gc.items() if v is not None}
+        ),
+        onedrive=OneDriveConnectorConfig(
+            **{k: v for k, v in od.items() if v is not None}
+        ),
+    )
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

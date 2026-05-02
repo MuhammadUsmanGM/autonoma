@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, UsageStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest, ProxyHealth } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, UsageStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest, ProxyHealth, ConnectorEntry } from './types'
 
 const BASE = '/api'
 
@@ -172,5 +172,15 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(channel ? { channel } : {}),
+    }),
+
+  getConnectors: () => request<ConnectorEntry[]>('/connectors'),
+
+  connectConnector: (name: string) =>
+    request<{ auth_url: string }>(`/connectors/${name}/connect`, { method: 'POST' }),
+
+  disconnectConnector: (name: string) =>
+    request<{ status: ConnectorEntry['status'] }>(`/connectors/${name}/disconnect`, {
+      method: 'POST',
     }),
 }

@@ -206,4 +206,27 @@ export interface WebhookEntry {
   json: Record<string, any>
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'logs' | 'webhooks'
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'connectors' | 'logs' | 'webhooks'
+
+export interface ConnectorManifest {
+  name: string
+  display_name: string
+  description: string
+  auth_type: 'oauth2' | 'api_key'
+  scopes: string[]
+  icon: string
+}
+
+export interface ConnectorStatusInfo {
+  state: 'disconnected' | 'connecting' | 'connected' | 'expired' | 'error'
+  account_id: string
+  account_label: string
+  scopes: string[]
+  expires_at: number
+  last_error: string
+}
+
+export interface ConnectorEntry {
+  manifest: ConnectorManifest
+  status: ConnectorStatusInfo
+}

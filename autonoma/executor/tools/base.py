@@ -18,6 +18,7 @@ class ToolPermission:
     filesystem: bool = False    # Can read/write files
     shell: bool = False         # Can execute shell commands
     secrets: bool = False       # Accesses API keys or credentials
+    external_api: bool = False  # Calls a third-party connector API (Google, MS, ...)
     description: str = ""       # Human-readable explanation
 
 
@@ -68,6 +69,7 @@ class BaseTool(ABC):
                 "filesystem": p.filesystem,
                 "shell": p.shell,
                 "secrets": p.secrets,
+                "external_api": p.external_api,
                 "description": p.description,
             },
         }

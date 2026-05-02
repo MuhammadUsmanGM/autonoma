@@ -27,6 +27,10 @@ node_modules/
 .session/
 .memory/
 workspace/memory/
+workspace/.connector_key
+workspace/connectors.db
+workspace/connectors.db-wal
+workspace/connectors.db-shm
 
 # WhatsApp bridge sidecar
 whatsapp-bridge/node_modules/

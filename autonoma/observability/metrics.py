@@ -292,6 +292,30 @@ followups_due = metrics_registry.gauge(
     "autonoma_followups_due",
     "Current count of follow-ups whose due time has elapsed.",
 )
+connector_status = metrics_registry.gauge(
+    "autonoma_connector_status",
+    "Connector state: 1=connected, 0=disconnected, -1=error/expired.",
+)
+
+
+_CONNECTOR_STATE_TO_GAUGE = {
+    "connected": 1.0,
+    "disconnected": 0.0,
+    "connecting": 0.0,
+    "expired": -1.0,
+    "error": -1.0,
+}
+
+
+def set_connector_status(name: str, state: str) -> None:
+    """Project a connector ``ConnectorStatus.state`` onto the gauge."""
+    try:
+        connector_status.set(
+            _CONNECTOR_STATE_TO_GAUGE.get(state, 0.0),
+            labels={"connector": name},
+        )
+    except Exception:  # pragma: no cover — metrics must never break a connector
+        pass
 
 
 def record_sandbox_denial(tool: str, reason: str) -> None:
