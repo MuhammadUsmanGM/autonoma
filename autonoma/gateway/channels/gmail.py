@@ -80,10 +80,23 @@ class GmailChannel(ChannelAdapter):
                 user_id=em["from_addr"],
                 user_name=em["from_name"],
                 content=em["body"],
-                metadata={"subject": em["subject"]},
+                metadata={
+                    "subject": em["subject"],
+                    "headers": em.get("headers", {}),
+                },
             )
 
             response = await self._handler(message)
+
+            triage = (response.metadata or {}).get("triage", {})
+            decision = triage.get("decision")
+            if decision in {"ignore", "archive", "escalate"} or not response.content.strip():
+                logger.info(
+                    "Gmail reply suppressed for %s (decision=%s)",
+                    em["from_addr"],
+                    decision or "empty",
+                )
+                continue
 
             await asyncio.to_thread(
                 self._send_reply,
@@ -146,6 +159,15 @@ class GmailChannel(ChannelAdapter):
                     "subject": subject,
                     "body": body.strip(),
                     "references": msg.get("References", ""),
+                    "headers": {
+                        "list_unsubscribe": msg.get("List-Unsubscribe", ""),
+                        "list_id": msg.get("List-Id", ""),
+                        "auto_submitted": msg.get("Auto-Submitted", ""),
+                        "precedence": msg.get("Precedence", ""),
+                        "x_auto_response_suppress": msg.get("X-Auto-Response-Suppress", ""),
+                        "return_path": msg.get("Return-Path", ""),
+                        "in_reply_to": msg.get("In-Reply-To", ""),
+                    },
                 })
 
                 # Mark as read

@@ -122,6 +122,32 @@ class SandboxSettings:
 
 
 @dataclass
+class TriageConfig:
+    """Pre-agent triage policy.
+
+    Filters inbound messages so the agent doesn't reply to noreply addresses,
+    newsletters, auto-confirmations, broadcast spam, etc. Layer 1 is
+    deterministic rules (free); Layer 2 is an optional cheap LLM classifier
+    for ambiguous cases.
+    """
+
+    enabled: bool = True
+    # When true, ambiguous messages that pass Layer 1 are sent to a small
+    # LLM for classification. Costs one cheap inference per uncached sender.
+    llm_classifier_enabled: bool = False
+    # Model slug used for the Layer 2 classifier. Should be small/cheap.
+    classifier_model: str = ""
+    # How long a per-sender decision is cached, in seconds. Newsletters from
+    # the same address within this window won't be re-classified.
+    sender_cache_ttl: int = 86400
+    # When a message is filtered (ignore/archive), still append a one-line
+    # entry to the daily memory log so the user has a record.
+    archive_to_memory: bool = True
+    # When a decision is "escalate", surface a HUD alert instead of replying.
+    escalate_to_dashboard: bool = True
+
+
+@dataclass
 class ObservabilityConfig:
     # "text" (human-readable, default) or "json" (one JSON object per line)
     log_format: str = "text"
@@ -146,6 +172,7 @@ class Config:
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     sandbox: SandboxSettings = field(default_factory=SandboxSettings)
+    triage: TriageConfig = field(default_factory=TriageConfig)
     workspace_dir: str = "workspace"
     session_dir: str = ".session"
     log_level: str = "INFO"
@@ -166,6 +193,7 @@ def load_config(config_path: str | None = None) -> Config:
     llm_data = data.get("llm", {})
     observability_data = data.get("observability", {})
     sandbox_data = data.get("sandbox", {})
+    triage_data = data.get("triage", {})
 
     config = Config(
         name=data.get("name", "Autonoma"),
@@ -176,6 +204,9 @@ def load_config(config_path: str | None = None) -> Config:
         ),
         sandbox=SandboxSettings(
             **{k: v for k, v in sandbox_data.items() if v is not None}
+        ),
+        triage=TriageConfig(
+            **{k: v for k, v in triage_data.items() if v is not None}
         ),
         workspace_dir=data.get("workspace_dir", "workspace"),
         session_dir=data.get("session_dir", ".session"),
@@ -242,6 +273,17 @@ def load_config(config_path: str | None = None) -> Config:
         config.observability.otel_service_name = service_name
     if headers := os.getenv("AUTONOMA_OTEL_HEADERS"):
         config.observability.otel_headers = headers
+
+    # --- Triage overrides ---
+
+    if (triage_env := os.getenv("AUTONOMA_TRIAGE_ENABLED")) is not None:
+        config.triage.enabled = triage_env.lower() not in ("0", "false", "no", "off", "")
+    if (clf_env := os.getenv("AUTONOMA_TRIAGE_LLM_CLASSIFIER")) is not None:
+        config.triage.llm_classifier_enabled = clf_env.lower() not in (
+            "0", "false", "no", "off", ""
+        )
+    if model := os.getenv("AUTONOMA_TRIAGE_MODEL"):
+        config.triage.classifier_model = model
 
     return config
 

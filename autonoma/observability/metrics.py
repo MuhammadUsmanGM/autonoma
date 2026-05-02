@@ -272,6 +272,10 @@ sandbox_denied_total = metrics_registry.counter(
     "autonoma_sandbox_denied_total",
     "Sandbox policy denials, labeled by tool and reason.",
 )
+triage_total = metrics_registry.counter(
+    "autonoma_triage_total",
+    "Triage decisions per inbound message, by decision/channel/layer.",
+)
 
 
 def record_sandbox_denial(tool: str, reason: str) -> None:

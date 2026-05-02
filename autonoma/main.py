@@ -143,8 +143,10 @@ async def run(
     agent_router = AgentRouter()
     agent_router.register(config.name, agent, default=True)
 
-    # 11. Create gateway router
-    gateway_router = GatewayRouter(agent_router)
+    # 11. Create gateway router (with pre-agent triage)
+    from autonoma.cortex.triage import Triage
+    triage = Triage(config.triage, session_dir=config.session_dir)
+    gateway_router = GatewayRouter(agent_router, triage=triage)
 
     # 12. Create HTTP server (always on — needed for dashboard API + channels)
     ch = config.channels
