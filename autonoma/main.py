@@ -11,9 +11,12 @@ from typing import Any
 
 from autonoma.config import load_config
 from autonoma.cortex.agent import Agent
+from autonoma.cortex.contacts import ContactStore
 from autonoma.cortex.context import ContextAssembler
+from autonoma.cortex.followup_scheduler import FollowupScheduler
 from autonoma.cortex.router import AgentRouter
 from autonoma.cortex.session import SessionManager
+from autonoma.cortex.state_machine import ConversationStateStore
 from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.sandbox import Sandbox, SandboxConfig
 from autonoma.executor.task_queue import TaskQueue, Priority
@@ -132,11 +135,23 @@ async def run(
 
     logger.info("Tools available: %s", ", ".join(skill_registry.get_tool_names()))
 
+    # 8c. Contact registry + conversation state store. Both are independent
+    # SQLite files so they can be wiped or migrated separately from memory.
+    contact_store = ContactStore(config.relationship)
+    state_store = ConversationStateStore(config.conversation_state)
+
     # 9. Create agent
     agent = Agent(
         config, provider, memory_store, session_manager, context_assembler,
         tool_runner=tool_runner, skill_registry=skill_registry,
         trace_store=trace_store,
+        contact_store=contact_store,
+        state_store=state_store,
+    )
+
+    # 9b. Proactive follow-up scheduler (only active when both stores enabled).
+    followup_scheduler = FollowupScheduler(
+        config.conversation_state, state_store, contact_store, task_queue,
     )
 
     # 10. Create agent router
@@ -259,6 +274,7 @@ async def run(
     consolidation_interval = config.memory.decay_interval if config.memory.consolidation_enabled else 0
     async with MemoryFlusher(memory_store, consolidation_interval=consolidation_interval):
         await task_queue.start()
+        await followup_scheduler.start()
         await server.start()
 
         try:
@@ -266,6 +282,7 @@ async def run(
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            await followup_scheduler.stop()
             await task_queue.stop()
             await server.stop()
 

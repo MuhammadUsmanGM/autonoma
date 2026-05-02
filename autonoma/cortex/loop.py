@@ -7,8 +7,13 @@ import re
 import time
 from typing import Any
 
+from autonoma.cortex.contacts import ContactStore
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.session import SessionManager
+from autonoma.cortex.state_machine import (
+    ConversationStateStore,
+    parse_followup_tag,
+)
 from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.memory.store import MemoryStore
@@ -56,6 +61,8 @@ class AgentLoop:
         tool_runner: ToolRunner | None = None,
         skill_registry: SkillRegistry | None = None,
         trace_store: TraceStore | None = None,
+        contact_store: ContactStore | None = None,
+        state_store: ConversationStateStore | None = None,
     ):
         self._provider = provider
         self._context = context_assembler
@@ -64,6 +71,8 @@ class AgentLoop:
         self._tool_runner = tool_runner
         self._skill_registry = skill_registry
         self._trace_store = trace_store
+        self._contacts = contact_store
+        self._state_store = state_store
 
     async def process(self, message: Message, session_id: str) -> AgentResponse:
         """Run the full 9-stage pipeline."""
@@ -105,6 +114,25 @@ class AgentLoop:
             # Stage 2: ROUTE (handled by gateway router — no-op here)
             self._observe(trace, "route", {"user_id": message.user_id})
 
+            # Stage 2.5: RESOLVE CONTACT + STATE (relationship + conversation state)
+            contact = None
+            state = None
+            if self._contacts is not None:
+                contact = await self._contacts.upsert(message)
+                self._observe(trace, "resolve_contact", {
+                    "canonical_id": contact.canonical_id,
+                    "tier": contact.tier,
+                    "message_count": contact.message_count,
+                })
+            if self._state_store is not None and contact is not None:
+                state = await self._state_store.record_inbound(
+                    contact.canonical_id, message.id
+                )
+                self._observe(trace, "update_state", {
+                    "state": state.state,
+                    "canonical_id": contact.canonical_id,
+                })
+
             # Stage 3: ASSEMBLE CONTEXT
             user_entry = SessionEntry(
                 role="user",
@@ -115,7 +143,9 @@ class AgentLoop:
             await self._sessions.append(session_id, user_entry)
 
             history = await self._sessions.load_history(session_id)
-            system_prompt, messages = await self._context.assemble(history)
+            system_prompt, messages = await self._context.assemble(
+                history, contact=contact, state=state,
+            )
             self._observe(
                 trace,
                 "assemble_context",
@@ -184,11 +214,28 @@ class AgentLoop:
 
             final_text = response.text
 
+            # Extract [FOLLOWUP: ...] tag before memory tag stripping so we
+            # can transition state. The tag is removed from the user-visible
+            # reply at the same time.
+            followup_at, followup_reason, final_text = parse_followup_tag(final_text)
+
             # Stage 7: PERSIST MEMORY
             cleaned_response = await self._persist(
                 session_id, message, final_text
             )
             self._observe(trace, "persist_memory", {"cleaned": True})
+
+            # Stage 7.5: STATE TRANSITION (outbound)
+            if self._state_store is not None and contact is not None:
+                await self._state_store.record_outbound(
+                    contact.canonical_id,
+                    followup_at=followup_at,
+                    followup_reason=followup_reason,
+                )
+                self._observe(trace, "state_outbound", {
+                    "followup_scheduled": followup_at is not None,
+                    "followup_reason": followup_reason[:120],
+                })
 
             # Stage 8: OBSERVE
             elapsed = time.time() - start_time

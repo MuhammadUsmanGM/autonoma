@@ -276,6 +276,22 @@ triage_total = metrics_registry.counter(
     "autonoma_triage_total",
     "Triage decisions per inbound message, by decision/channel/layer.",
 )
+contact_tier_total = metrics_registry.counter(
+    "autonoma_contact_tier_total",
+    "Inbound messages classified by relationship tier and channel.",
+)
+conversation_state_changes_total = metrics_registry.counter(
+    "autonoma_conversation_state_changes_total",
+    "Transitions in the per-contact conversation state machine.",
+)
+followups_scheduled_total = metrics_registry.counter(
+    "autonoma_followups_scheduled_total",
+    "Number of proactive follow-ups scheduled by the state machine.",
+)
+followups_due = metrics_registry.gauge(
+    "autonoma_followups_due",
+    "Current count of follow-ups whose due time has elapsed.",
+)
 
 
 def record_sandbox_denial(tool: str, reason: str) -> None:

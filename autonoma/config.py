@@ -122,6 +122,41 @@ class SandboxSettings:
 
 
 @dataclass
+class RelationshipConfig:
+    """Per-contact relationship tiering.
+
+    Drives tone calibration: a stranger gets a formal terse reply, a VIP
+    gets a polished thorough one. Tier is computed from message history
+    plus explicit overrides from this config.
+    """
+
+    enabled: bool = True
+    db_path: str = ".memory/contacts.db"
+    default_tier: str = "stranger"
+    # Address / phone / handle exact matches always classified as VIP.
+    vip_addresses: list[str] = field(default_factory=list)
+    # Substring patterns in display_name or signature that escalate to VIP.
+    vip_keywords: list[str] = field(default_factory=list)
+    # Message-count thresholds: <stranger_max ⇒ stranger, <colleague_min ⇒ acquaintance
+    stranger_max_messages: int = 1
+    colleague_min_messages: int = 6
+
+
+@dataclass
+class ConversationStateConfig:
+    """State machine that tracks awaiting/resolved/snoozed per contact."""
+
+    enabled: bool = True
+    db_path: str = ".memory/conversation_state.db"
+    # If a user message has gone unanswered this long, transition to followup_needed.
+    awaiting_reply_ttl_hours: int = 72
+    # Default snooze duration when no explicit deadline given.
+    snooze_default_hours: int = 24
+    # How often the followup scheduler scans for due nudges.
+    followup_check_interval_seconds: int = 3600
+
+
+@dataclass
 class TriageConfig:
     """Pre-agent triage policy.
 
@@ -173,6 +208,8 @@ class Config:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     sandbox: SandboxSettings = field(default_factory=SandboxSettings)
     triage: TriageConfig = field(default_factory=TriageConfig)
+    relationship: RelationshipConfig = field(default_factory=RelationshipConfig)
+    conversation_state: ConversationStateConfig = field(default_factory=ConversationStateConfig)
     workspace_dir: str = "workspace"
     session_dir: str = ".session"
     log_level: str = "INFO"
@@ -194,6 +231,8 @@ def load_config(config_path: str | None = None) -> Config:
     observability_data = data.get("observability", {})
     sandbox_data = data.get("sandbox", {})
     triage_data = data.get("triage", {})
+    relationship_data = data.get("relationship", {})
+    conversation_state_data = data.get("conversation_state", {})
 
     config = Config(
         name=data.get("name", "Autonoma"),
@@ -207,6 +246,12 @@ def load_config(config_path: str | None = None) -> Config:
         ),
         triage=TriageConfig(
             **{k: v for k, v in triage_data.items() if v is not None}
+        ),
+        relationship=RelationshipConfig(
+            **{k: v for k, v in relationship_data.items() if v is not None}
+        ),
+        conversation_state=ConversationStateConfig(
+            **{k: v for k, v in conversation_state_data.items() if v is not None}
         ),
         workspace_dir=data.get("workspace_dir", "workspace"),
         session_dir=data.get("session_dir", ".session"),
@@ -284,6 +329,15 @@ def load_config(config_path: str | None = None) -> Config:
         )
     if model := os.getenv("AUTONOMA_TRIAGE_MODEL"):
         config.triage.classifier_model = model
+
+    # --- Relationship / state overrides ---
+
+    if (rel_env := os.getenv("AUTONOMA_RELATIONSHIP_ENABLED")) is not None:
+        config.relationship.enabled = rel_env.lower() not in ("0", "false", "no", "off", "")
+    if vips := os.getenv("AUTONOMA_VIP_ADDRESSES"):
+        config.relationship.vip_addresses = [v.strip() for v in vips.split(",") if v.strip()]
+    if (state_env := os.getenv("AUTONOMA_STATE_ENABLED")) is not None:
+        config.conversation_state.enabled = state_env.lower() not in ("0", "false", "no", "off", "")
 
     return config
 

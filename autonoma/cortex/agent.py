@@ -6,9 +6,11 @@ import asyncio
 import logging
 
 from autonoma.config import Config
+from autonoma.cortex.contacts import ContactStore
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.loop import AgentLoop
 from autonoma.cortex.session import SessionManager
+from autonoma.cortex.state_machine import ConversationStateStore
 from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.memory.store import MemoryStore
@@ -32,12 +34,16 @@ class Agent:
         tool_runner: ToolRunner | None = None,
         skill_registry: SkillRegistry | None = None,
         trace_store: TraceStore | None = None,
+        contact_store: ContactStore | None = None,
+        state_store: ConversationStateStore | None = None,
     ):
         self.name = config.name
         self._loop = AgentLoop(
             provider, context_assembler, memory_store, session_manager,
             tool_runner=tool_runner, skill_registry=skill_registry,
             trace_store=trace_store,
+            contact_store=contact_store,
+            state_store=state_store,
         )
         self._sessions = session_manager
         self._active_sessions: dict[str, str] = {}  # channel_id -> session_id

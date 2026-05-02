@@ -104,6 +104,12 @@ Available tools:
 ## Context
 The following memory and context is available to you:
 
+### Sender Profile
+{relationship_context}
+
+### Conversation State
+{conversation_state}
+
 ### Long-Term Memory
 {memory_context}
 
