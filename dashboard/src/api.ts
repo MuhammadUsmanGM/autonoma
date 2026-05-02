@@ -1,4 +1,4 @@
-import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, UsageStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest, ProxyHealth, ConnectorEntry } from './types'
+import type { Stats, Memory, Session, SessionDetail, TraceItem, TraceStats, UsageStats, TaskItem, TaskStats, AppConfig, ChannelInfo, LogEntry, WebhookEntry, Alert, SkillManifest, ProxyHealth, ConnectorEntry, Contact } from './types'
 
 const BASE = '/api'
 
@@ -182,5 +182,21 @@ export const api = {
   disconnectConnector: (name: string) =>
     request<{ status: ConnectorEntry['status'] }>(`/connectors/${name}/disconnect`, {
       method: 'POST',
+    }),
+
+  getContacts: () => request<Contact[]>('/contacts'),
+
+  mergeContacts: (keep_id: string, drop_id: string) =>
+    request<Contact>('/contacts/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep_id, drop_id }),
+    }),
+
+  linkContactIdentifier: (canonical_id: string, kind: 'email' | 'phone' | 'handle', value: string) =>
+    request<{ added: number; value: string }>('/contacts/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ canonical_id, kind, value }),
     }),
 }

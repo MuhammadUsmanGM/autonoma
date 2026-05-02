@@ -88,6 +88,7 @@ def register_dashboard_routes(
     trace_store=None,
     skill_registry=None,
     agent_runner=None,
+    contact_store=None,
 ) -> None:
     """Register all dashboard API routes on the HTTP server."""
 
@@ -1066,6 +1067,78 @@ def register_dashboard_routes(
             logger.error("Dashboard POST /api/proxy/health/recheck error: %s", e)
             return 500, headers, json.dumps({"error": str(e)})
 
+    # ---------------------------------------------------------------- contacts
+    # Contacts are optional — the registry can be disabled in config. Each
+    # handler short-circuits with 503 when the store isn't wired so the
+    # dashboard renders "feature off" instead of a 500.
+
+    async def handle_contacts_list(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if contact_store is None:
+            return 503, headers, json.dumps({"error": "contact registry disabled"})
+        try:
+            contacts = await contact_store.list_contacts(limit=500)
+            data = [_contact_to_dict(c) for c in contacts]
+            return 200, headers, json.dumps(data)
+        except Exception as e:
+            logger.error("Dashboard /api/contacts error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_contacts_merge(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if contact_store is None:
+            return 503, headers, json.dumps({"error": "contact registry disabled"})
+        try:
+            body = json.loads(request.get("body", "{}") or "{}")
+            keep_id = (body.get("keep_id") or "").strip()
+            drop_id = (body.get("drop_id") or "").strip()
+            if not keep_id or not drop_id:
+                return 400, headers, json.dumps(
+                    {"error": "keep_id and drop_id are required"}
+                )
+            merged = await contact_store.merge_contacts(keep_id, drop_id)
+            if merged is None:
+                return 404, headers, json.dumps({"error": "unknown contact id"})
+            return 200, headers, json.dumps(_contact_to_dict(merged))
+        except Exception as e:
+            logger.error("Dashboard POST /api/contacts/merge error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
+    async def handle_contacts_link(request: dict) -> tuple[int, dict[str, str], str]:
+        headers = {"Content-Type": "application/json"}
+        if contact_store is None:
+            return 503, headers, json.dumps({"error": "contact registry disabled"})
+        try:
+            from autonoma.cortex.identity import (
+                CROSS_CHANNEL_KINDS,
+                Identifier,
+                normalize_email,
+                normalize_handle,
+                normalize_phone,
+            )
+            body = json.loads(request.get("body", "{}") or "{}")
+            canonical_id = (body.get("canonical_id") or "").strip()
+            kind = (body.get("kind") or "").strip().lower()
+            value = (body.get("value") or "").strip()
+            if not canonical_id or kind not in CROSS_CHANNEL_KINDS or not value:
+                return 400, headers, json.dumps(
+                    {"error": "canonical_id, kind (email|phone|handle), value required"}
+                )
+            normalized = (
+                normalize_email(value) if kind == "email"
+                else normalize_phone(value) if kind == "phone"
+                else normalize_handle(value)
+            )
+            if not normalized:
+                return 400, headers, json.dumps({"error": f"invalid {kind} value"})
+            added = await contact_store.add_extracted_identifiers(
+                canonical_id, [Identifier(kind, normalized)]
+            )
+            return 200, headers, json.dumps({"added": added, "value": normalized})
+        except Exception as e:
+            logger.error("Dashboard POST /api/contacts/link error: %s", e)
+            return 500, headers, json.dumps({"error": str(e)})
+
     # Kick off the background proxy health poller. Wrapped in a guard so
     # re-registering routes (e.g. in tests) doesn't spawn duplicate pollers.
     global _proxy_poller_task
@@ -1131,7 +1204,39 @@ def register_dashboard_routes(
     http_server.add_route("POST", "/api/proxy/health/recheck", handle_proxy_health_recheck)
     http_server.add_route("GET", "/api/channels/whatsapp/qr", handle_whatsapp_qr)
 
-    logger.info("Dashboard API routes registered (%d endpoints)", 34)
+    http_server.add_route("GET", "/api/contacts", handle_contacts_list)
+    http_server.add_route("POST", "/api/contacts/merge", handle_contacts_merge)
+    http_server.add_route("POST", "/api/contacts/link", handle_contacts_link)
+
+    logger.info("Dashboard API routes registered (%d endpoints)", 37)
+
+
+def _contact_to_dict(contact) -> dict[str, Any]:
+    """JSON-safe view of a Contact, with extracted identifiers split out."""
+    identities = list(contact.identities or [])
+    # Split channel-native identities (Telegram, Gmail, …) from extracted
+    # ones (rows where channel == "extracted") so the UI can render them
+    # in two columns: "channels" vs. "known emails / phones".
+    channel_ids: list[dict[str, str]] = []
+    extracted: list[dict[str, str]] = []
+    for ch, uid in identities:
+        if ch == "extracted":
+            kind, _, value = uid.partition(":")
+            extracted.append({"kind": kind, "value": value})
+        else:
+            channel_ids.append({"channel": ch, "user_id": uid})
+    return {
+        "canonical_id": contact.canonical_id,
+        "display_name": contact.display_name,
+        "tier": contact.tier,
+        "message_count": contact.message_count,
+        "first_seen": contact.first_seen,
+        "last_seen": contact.last_seen,
+        "vip_flag": contact.vip_flag,
+        "notes": contact.notes,
+        "channels": channel_ids,
+        "extracted": extracted,
+    }
 
 
 def _entry_to_dict(entry) -> dict[str, Any]:

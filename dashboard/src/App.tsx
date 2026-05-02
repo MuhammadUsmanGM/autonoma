@@ -12,6 +12,7 @@ import Tasks from './pages/Tasks'
 import SoulEditor from './pages/SoulEditor'
 import Channels from './pages/Channels'
 import Connectors from './pages/Connectors'
+import Contacts from './pages/Contacts'
 import Logs from './pages/Logs'
 import Webhooks from './pages/Webhooks'
 import { NotificationsProvider } from './contexts/NotificationsContext'
@@ -104,6 +105,7 @@ function App() {
               {page === 'soul' && <SoulEditor />}
               {page === 'channels' && <Channels />}
               {page === 'connectors' && <Connectors />}
+              {page === 'contacts' && <Contacts />}
               {page === 'logs' && <Logs />}
             </motion.div>
           </AnimatePresence>

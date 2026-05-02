@@ -256,6 +256,7 @@ async def run(
         trace_store=trace_store,
         skill_registry=skill_registry,
         agent_runner=agent_runner,
+        contact_store=contact_store,
     )
 
     # 16b. Register task handlers. ``agent_prompt`` is the default skill for

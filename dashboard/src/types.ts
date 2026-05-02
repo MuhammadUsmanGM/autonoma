@@ -206,7 +206,30 @@ export interface WebhookEntry {
   json: Record<string, any>
 }
 
-export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'connectors' | 'logs' | 'webhooks'
+export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'connectors' | 'contacts' | 'logs' | 'webhooks'
+
+export interface ContactChannel {
+  channel: string
+  user_id: string
+}
+
+export interface ContactExtracted {
+  kind: 'email' | 'phone' | 'handle'
+  value: string
+}
+
+export interface Contact {
+  canonical_id: string
+  display_name: string
+  tier: 'stranger' | 'acquaintance' | 'colleague' | 'vip'
+  message_count: number
+  first_seen: number
+  last_seen: number
+  vip_flag: boolean
+  notes: string
+  channels: ContactChannel[]
+  extracted: ContactExtracted[]
+}
 
 export interface ConnectorManifest {
   name: string

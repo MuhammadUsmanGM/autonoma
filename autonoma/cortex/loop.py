@@ -9,6 +9,10 @@ from typing import Any
 
 from autonoma.cortex.contacts import ContactStore
 from autonoma.cortex.context import ContextAssembler
+from autonoma.cortex.identity import (
+    extract_identifiers_from_text,
+    parse_link_identity_tags,
+)
 from autonoma.cortex.session import SessionManager
 from autonoma.cortex.state_machine import (
     ConversationStateStore,
@@ -119,10 +123,22 @@ class AgentLoop:
             state = None
             if self._contacts is not None:
                 contact = await self._contacts.upsert(message)
+                # Cross-channel identity hints: pull emails / phones out of
+                # the message body and attach them to this contact. Same
+                # email later spotted in a Telegram message → that Telegram
+                # conversation auto-merges into this contact.
+                extracted = extract_identifiers_from_text(message.content)
+                added = 0
+                if extracted:
+                    added = await self._contacts.add_extracted_identifiers(
+                        contact.canonical_id, extracted
+                    )
                 self._observe(trace, "resolve_contact", {
                     "canonical_id": contact.canonical_id,
                     "tier": contact.tier,
                     "message_count": contact.message_count,
+                    "extracted_identifiers": len(extracted),
+                    "extracted_added": added,
                 })
             if self._state_store is not None and contact is not None:
                 state = await self._state_store.record_inbound(
@@ -218,6 +234,21 @@ class AgentLoop:
             # can transition state. The tag is removed from the user-visible
             # reply at the same time.
             followup_at, followup_reason, final_text = parse_followup_tag(final_text)
+
+            # Extract [LINK_IDENTITY: kind=value] tags. The LLM emits these
+            # when it concludes from conversation context that the current
+            # contact also owns another identifier ("by the way, my email
+            # is alice@…"). Tags are stripped from the visible reply.
+            link_idents, final_text = parse_link_identity_tags(final_text)
+            if link_idents and contact is not None and self._contacts is not None:
+                added = await self._contacts.add_extracted_identifiers(
+                    contact.canonical_id, link_idents
+                )
+                self._observe(trace, "link_identity", {
+                    "canonical_id": contact.canonical_id,
+                    "tag_count": len(link_idents),
+                    "added": added,
+                })
 
             # Stage 7: PERSIST MEMORY
             cleaned_response = await self._persist(
