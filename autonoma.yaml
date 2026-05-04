@@ -22,10 +22,16 @@ llm:
 #     bridge_url: "http://localhost:3001"
 #     webhook_path: "/webhook/whatsapp"
 
-# Connectors (Google Calendar, OneDrive, ...).
+# Connectors (Google Calendar, OneDrive, GitHub, Google Contacts, Google Meet).
 # Credentials come from env (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET,
-# MS_CLIENT_ID / MS_CLIENT_SECRET) or the fields below. Connect / log out
-# each account from the dashboard /connectors page or the TUI menu.
+# MS_CLIENT_ID / MS_CLIENT_SECRET, GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET) or
+# the fields below. Connect / log out each account from the dashboard
+# /connectors page or the TUI menu.
+#
+# The three Google connectors share one OAuth client by default — set
+# GOOGLE_CLIENT_ID/SECRET once and Calendar, Contacts, and Meet all use it.
+# Override per-connector with GOOGLE_CONTACTS_CLIENT_ID / GOOGLE_MEET_CLIENT_ID
+# only when you intentionally want separate Google Cloud projects.
 # connectors:
 #   redirect_base_url: ""   # auto = http://<gateway.host>:<gateway.http_port>
 #   google_calendar:
@@ -33,6 +39,14 @@ llm:
 #   onedrive:
 #     enabled: false
 #     tenant: "common"
+#   github:
+#     enabled: false
+#   google_contacts:
+#     enabled: false
+#     enrich_contacts: true   # auto-bump tier when sender matches a saved contact
+#   google_meet:
+#     enabled: false
+#     extract_action_items: true   # transcripts -> followup_needed entries
 
 workspace_dir: "workspace"
 session_dir: ".session"

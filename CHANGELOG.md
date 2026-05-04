@@ -5,6 +5,40 @@ All notable changes to Autonoma will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Three new connectors:** GitHub, Google Contacts, Google Meet — all share
+  the same OAuth client subsystem as the existing Google Calendar / OneDrive
+  connectors, with tokens encrypted at rest in the connector token store.
+  - `github_*` tools (search/get issues + PRs, list notifications, comment,
+    create issue) for triaging issues and PRs without leaving Autonoma.
+  - `contacts_*` tools (search, get, resolve) on top of Google People API.
+  - `meet_*` tools (list conferences, get transcript, create link via
+    Calendar) — Meet has no standalone create-event endpoint, so Meet link
+    creation requires the Google Calendar connector to also be connected.
+- **Contact enrichment.** When Google Contacts is connected, inbound senders
+  matched in the user's saved contacts are auto-bumped from `stranger` to
+  `acquaintance` and their saved name + organisation are copied onto the
+  contact row. Higher tiers (colleague / VIP) are never downgraded; manually
+  flagged VIPs are never overwritten. Per-contact 24h rate limit on lookups.
+- **Meeting action items.** The `meet_get_transcript` tool scans transcripts
+  for "action item:", "@user will …", and "Name will …" patterns and writes
+  each unique item into the conversation state machine with a 48h follow-up,
+  so the proactive followup_scheduler picks them up. Disable with
+  `connectors.google_meet.extract_action_items: false`.
+- **GitHub identifier kind.** New `github` cross-channel kind on the contact
+  identity registry — `@login` mentions in github-context messages are
+  extracted into the identity graph (rejected on the GitHub-username grammar)
+  and `[LINK_IDENTITY: github=login]` tags are honoured everywhere.
+
+### Configuration
+- New `connectors.github`, `connectors.google_contacts`, `connectors.google_meet`
+  blocks in `autonoma.yaml`. Google connectors fall back to a shared
+  `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` if a per-connector pair isn't
+  set. New env-var toggles: `AUTONOMA_GITHUB_ENABLED`,
+  `AUTONOMA_GCONTACTS_ENABLED`, `AUTONOMA_GMEET_ENABLED`.
+
 ## [1.0.1] - 2026-04-28
 
 ### Added

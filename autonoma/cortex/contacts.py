@@ -442,6 +442,78 @@ class ContactStore:
                 (1 if flag else 0, 1 if flag else 0, canonical_id),
             )
 
+    async def apply_enrichment(
+        self,
+        canonical_id: str,
+        *,
+        display_name: str = "",
+        notes: str = "",
+        bump_to_tier: str = "",
+    ) -> Contact | None:
+        """Merge external enrichment (e.g. Google Contacts) into a contact row.
+
+        ``display_name`` and ``notes`` are only written when non-empty AND the
+        existing field is blank — we never clobber a name the user has typed.
+        ``bump_to_tier`` only ever raises the tier (and never above VIP),
+        because the enrichment signal is "this person is in the user's
+        address book", which is weaker than what a human or the heuristic
+        already knows.
+        """
+        if not canonical_id:
+            return None
+        return await asyncio.to_thread(
+            self._apply_enrichment_sync,
+            canonical_id, display_name, notes, bump_to_tier,
+        )
+
+    def _apply_enrichment_sync(
+        self,
+        canonical_id: str,
+        display_name: str,
+        notes: str,
+        bump_to_tier: str,
+    ) -> Contact | None:
+        # Tier ordering: stranger < acquaintance < colleague < vip. Bump only
+        # happens if the new tier outranks the existing one. VIP is owned
+        # exclusively by explicit set_vip / vip_addresses config.
+        TIER_ORDER = {
+            TIER_STRANGER: 0,
+            TIER_ACQUAINTANCE: 1,
+            TIER_COLLEAGUE: 2,
+            TIER_VIP: 3,
+        }
+        with self._connect() as conn:
+            existing = self._fetch(conn, canonical_id)
+            if existing is None:
+                return None
+            new_name = existing.display_name
+            if display_name and not existing.display_name:
+                new_name = display_name
+            new_notes = existing.notes
+            if notes and not existing.notes:
+                new_notes = notes
+            new_tier = existing.tier
+            if (
+                bump_to_tier in _VALID_TIERS
+                and bump_to_tier != TIER_VIP  # never auto-promote to VIP
+                and not existing.vip_flag
+                and TIER_ORDER.get(bump_to_tier, 0)
+                > TIER_ORDER.get(existing.tier, 0)
+            ):
+                new_tier = bump_to_tier
+            if (
+                new_name == existing.display_name
+                and new_notes == existing.notes
+                and new_tier == existing.tier
+            ):
+                return existing
+            conn.execute(
+                "UPDATE contacts SET display_name = ?, notes = ?, tier = ? "
+                "WHERE canonical_id = ?",
+                (new_name, new_notes, new_tier, canonical_id),
+            )
+            return self._fetch(conn, canonical_id)
+
     # ------------------------------------------------------------------ helpers
 
     def _fetch(self, conn: sqlite3.Connection, canonical_id: str) -> Contact | None:

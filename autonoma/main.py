@@ -11,6 +11,7 @@ from typing import Any
 
 from autonoma.config import load_config
 from autonoma.cortex.agent import Agent
+from autonoma.cortex.contact_enricher import ContactEnricher
 from autonoma.cortex.contacts import ContactStore
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.followup_scheduler import FollowupScheduler
@@ -136,19 +137,36 @@ async def run(
 
     logger.info("Tools available: %s", ", ".join(skill_registry.get_tool_names()))
 
-    # 8d. Connectors (Google Calendar, OneDrive, ...). Each one owns its OAuth
-    # flow + persisted tokens; their tools are added to the runner only while
-    # an account is connected.
-    connector_registry = _build_connector_registry(config)
-    _refresh_connector_tools(connector_registry, tool_runner, skill_registry)
-    connector_registry.on_tools_changed(
-        lambda: _refresh_connector_tools(connector_registry, tool_runner, skill_registry)
-    )
-
     # 8c. Contact registry + conversation state store. Both are independent
     # SQLite files so they can be wiped or migrated separately from memory.
+    # Built before the connector registry so the Google Meet connector can
+    # be handed references for action-item extraction.
     contact_store = ContactStore(config.relationship)
     state_store = ConversationStateStore(config.conversation_state)
+
+    # 8d. Connectors (Google Calendar, Contacts, Meet, OneDrive, GitHub...).
+    # Each one owns its OAuth flow + persisted tokens; their tools are added
+    # to the runner only while an account is connected.
+    connector_registry = _build_connector_registry(
+        config, contact_store=contact_store, state_store=state_store,
+    )
+
+    # 8e. Contact enricher: when Google Contacts is connected, lifts strangers
+    # to acquaintance and copies the saved name/org onto the contact row.
+    google_contacts_connector = connector_registry.get("google_contacts")
+    contact_enricher = ContactEnricher(
+        contact_store, google_contacts_connector,
+        enabled=config.connectors.google_contacts.enrich_contacts,
+    )
+
+    _refresh_connector_tools(
+        connector_registry, tool_runner, skill_registry, contact_enricher,
+    )
+    connector_registry.on_tools_changed(
+        lambda: _refresh_connector_tools(
+            connector_registry, tool_runner, skill_registry, contact_enricher,
+        )
+    )
 
     # 9. Create agent
     agent = Agent(
@@ -157,6 +175,7 @@ async def run(
         trace_store=trace_store,
         contact_store=contact_store,
         state_store=state_store,
+        contact_enricher=contact_enricher,
     )
 
     # 9b. Proactive follow-up scheduler (only active when both stores enabled).
@@ -302,7 +321,12 @@ async def run(
     logger.info("Autonoma shut down cleanly.")
 
 
-def _build_connector_registry(config) -> ConnectorRegistry:
+def _build_connector_registry(
+    config,
+    *,
+    contact_store: ContactStore | None = None,
+    state_store: ConversationStateStore | None = None,
+) -> ConnectorRegistry:
     """Construct the connector registry from current config.
 
     A connector is registered only when its credentials are present — without
@@ -322,14 +346,37 @@ def _build_connector_registry(config) -> ConnectorRegistry:
         or f"http://{config.gateway.host}:{config.gateway.http_port}"
     )
 
+    calendar_connector = None
     if cc.google_calendar.enabled and cc.google_calendar.client_id:
         from autonoma.connectors.google_calendar import GoogleCalendarConnector
+        calendar_connector = GoogleCalendarConnector(
+            cc.google_calendar,
+            store,
+            redirect_uri=f"{base}/oauth/google_calendar/callback",
+            state_secret=state_secret,
+        )
+        registry.register(calendar_connector)
+    if cc.google_contacts.enabled and cc.google_contacts.client_id:
+        from autonoma.connectors.google_contacts import GoogleContactsConnector
         registry.register(
-            GoogleCalendarConnector(
-                cc.google_calendar,
+            GoogleContactsConnector(
+                cc.google_contacts,
                 store,
-                redirect_uri=f"{base}/oauth/google_calendar/callback",
+                redirect_uri=f"{base}/oauth/google_contacts/callback",
                 state_secret=state_secret,
+            )
+        )
+    if cc.google_meet.enabled and cc.google_meet.client_id:
+        from autonoma.connectors.google_meet import GoogleMeetConnector
+        registry.register(
+            GoogleMeetConnector(
+                cc.google_meet,
+                store,
+                redirect_uri=f"{base}/oauth/google_meet/callback",
+                state_secret=state_secret,
+                calendar_connector=calendar_connector,
+                contact_store=contact_store,
+                state_store=state_store,
             )
         )
     if cc.onedrive.enabled and cc.onedrive.client_id:
@@ -339,6 +386,16 @@ def _build_connector_registry(config) -> ConnectorRegistry:
                 cc.onedrive,
                 store,
                 redirect_uri=f"{base}/oauth/onedrive/callback",
+                state_secret=state_secret,
+            )
+        )
+    if cc.github.enabled and cc.github.client_id:
+        from autonoma.connectors.github import GitHubConnector
+        registry.register(
+            GitHubConnector(
+                cc.github,
+                store,
+                redirect_uri=f"{base}/oauth/github/callback",
                 state_secret=state_secret,
             )
         )
@@ -352,23 +409,32 @@ def _push_connector_metrics(registry: ConnectorRegistry) -> None:
         set_connector_status(name, status.state)
 
 
+_CONNECTOR_TOOL_PREFIXES = (
+    "calendar_",
+    "onedrive_",
+    "github_",
+    "contacts_",
+    "meet_",
+)
+
+
 def _refresh_connector_tools(
     registry: ConnectorRegistry,
     tool_runner,
     skill_registry,
+    contact_enricher: ContactEnricher | None = None,
 ) -> None:
     """Resync ToolRunner + SkillRegistry to the live set of connector tools.
 
     Called once at boot, then again whenever a connector is connected /
     disconnected. We track which tools came from connectors via a name prefix
-    (``calendar_*``, ``onedrive_*``) so we don't accidentally remove built-in
-    tools that share neither prefix.
+    so we don't accidentally remove built-in tools that share neither prefix.
     """
     desired = {t.name: t for t in registry.active_tools()}
     desired_names = set(desired)
     # Drop connector-owned tools that are no longer active.
     for name in list(skill_registry.get_tool_names()):
-        is_connector_tool = name.startswith(("calendar_", "onedrive_"))
+        is_connector_tool = name.startswith(_CONNECTOR_TOOL_PREFIXES)
         if is_connector_tool and name not in desired_names:
             tool_runner.unregister(name)
             skill_registry.unregister(name)
@@ -376,6 +442,11 @@ def _refresh_connector_tools(
     for tool in desired.values():
         tool_runner.register(tool)
         skill_registry.register(tool)
+    # Keep the contact enricher pointing at the live Google Contacts
+    # connector — clears its per-contact "tried" cache on disconnect/reconnect
+    # so newly-saved contacts are picked up immediately.
+    if contact_enricher is not None:
+        contact_enricher.set_connector(registry.get("google_contacts"))
     _push_connector_metrics(registry)
 
 

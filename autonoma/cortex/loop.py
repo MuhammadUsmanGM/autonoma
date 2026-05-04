@@ -7,10 +7,11 @@ import re
 import time
 from typing import Any
 
+from autonoma.cortex.contact_enricher import ContactEnricher
 from autonoma.cortex.contacts import ContactStore
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.identity import (
-    extract_identifiers_from_text,
+    extract_identifiers_for_channel,
     parse_link_identity_tags,
 )
 from autonoma.cortex.session import SessionManager
@@ -67,6 +68,7 @@ class AgentLoop:
         trace_store: TraceStore | None = None,
         contact_store: ContactStore | None = None,
         state_store: ConversationStateStore | None = None,
+        contact_enricher: ContactEnricher | None = None,
     ):
         self._provider = provider
         self._context = context_assembler
@@ -77,6 +79,7 @@ class AgentLoop:
         self._trace_store = trace_store
         self._contacts = contact_store
         self._state_store = state_store
+        self._contact_enricher = contact_enricher
 
     async def process(self, message: Message, session_id: str) -> AgentResponse:
         """Run the full 9-stage pipeline."""
@@ -127,18 +130,30 @@ class AgentLoop:
                 # the message body and attach them to this contact. Same
                 # email later spotted in a Telegram message → that Telegram
                 # conversation auto-merges into this contact.
-                extracted = extract_identifiers_from_text(message.content)
+                extracted = extract_identifiers_for_channel(
+                    message.channel, message.content
+                )
                 added = 0
                 if extracted:
                     added = await self._contacts.add_extracted_identifiers(
                         contact.canonical_id, extracted
                     )
+                enriched = False
+                if self._contact_enricher is not None and self._contact_enricher.is_active():
+                    try:
+                        enriched_contact = await self._contact_enricher.enrich(contact)
+                        if enriched_contact is not None and enriched_contact is not contact:
+                            contact = enriched_contact
+                            enriched = True
+                    except Exception as exc:  # pragma: no cover — best-effort
+                        logger.debug("Contact enrichment failed: %s", exc)
                 self._observe(trace, "resolve_contact", {
                     "canonical_id": contact.canonical_id,
                     "tier": contact.tier,
                     "message_count": contact.message_count,
                     "extracted_identifiers": len(extracted),
                     "extracted_added": added,
+                    "enriched": enriched,
                 })
             if self._state_store is not None and contact is not None:
                 state = await self._state_store.record_inbound(

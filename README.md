@@ -264,6 +264,21 @@ tracing UI.
 | `file_list` | List files and directories in the workspace |
 | `shell` | Execute shell commands in a sandboxed environment |
 
+## Connectors
+
+OAuth connectors expose third-party tools to the agent only while an account
+is connected. Sign in / out from the dashboard's **Connectors** page (or the
+TUI). Tokens are encrypted at rest. Set credentials in `.env`; per-connector
+pairs override the shared `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+| Connector | Tools | Notes |
+|-----------|-------|-------|
+| Google Calendar | `calendar_list_events`, `calendar_create_event`, `calendar_find_free_slot` | Required by Meet for link creation. |
+| Google Contacts | `contacts_search`, `contacts_get`, `contacts_resolve` | Auto-enriches the contact registry: matched senders are bumped from stranger to acquaintance, with saved name + org copied across. VIPs are never overwritten. |
+| Google Meet | `meet_list_conferences`, `meet_get_transcript`, `meet_create_link` | Transcripts are scanned for action items and emitted into the conversation state machine as 48h follow-ups. Link creation calls Calendar. |
+| OneDrive | `onedrive_*` | Microsoft Graph file access. |
+| GitHub | `github_search_issues`, `github_get_issue`, `github_get_pr`, `github_list_notifications`, `github_comment`, `github_create_issue` | Mutating tools (`github_comment`, `github_create_issue`) require approval like any other dangerous tool. |
+
 ## Security & Sandbox
 
 Tool execution goes through a single sandbox boundary (`autonoma/executor/sandbox.py`)

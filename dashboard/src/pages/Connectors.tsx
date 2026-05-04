@@ -6,7 +6,10 @@ import EmptyState from '../components/EmptyState'
 
 const ICONS: Record<string, string> = {
   google_calendar: 'GC',
+  google_contacts: 'GP',
+  google_meet: 'GM',
   onedrive: 'OD',
+  github: 'GH',
 }
 
 export default function Connectors() {
@@ -84,7 +87,7 @@ export default function Connectors() {
         <EmptyState
           icon={Plug}
           title="No connectors registered"
-          description="Add a client_id and client_secret for Google Calendar or OneDrive in your .env to enable connectors."
+          description="Add OAuth client credentials (Google, GitHub, OneDrive) in your .env to enable connectors."
         />
       </div>
     )

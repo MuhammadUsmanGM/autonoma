@@ -211,6 +211,57 @@ class OneDriveConnectorConfig:
 
 
 @dataclass
+class GitHubConnectorConfig:
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    # GitHub OAuth Apps don't support PKCE for confidential clients; the
+    # connector uses the standard authorization-code flow with state.
+    scopes: list[str] = field(default_factory=lambda: [
+        "repo",
+        "read:org",
+        "read:user",
+        "notifications",
+    ])
+
+
+@dataclass
+class GoogleContactsConnectorConfig:
+    enabled: bool = False
+    # Reuses Google OAuth client; if left blank the connector reads
+    # client_id/secret from google_calendar so users only configure once.
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: list[str] = field(default_factory=lambda: [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/contacts.readonly",
+        "https://www.googleapis.com/auth/contacts.other.readonly",
+    ])
+    # When connected, auto-bump unknown senders from "stranger" to
+    # "acquaintance" if their email/phone matches a saved Google contact.
+    enrich_contacts: bool = True
+
+
+@dataclass
+class GoogleMeetConnectorConfig:
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: list[str] = field(default_factory=lambda: [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/meetings.space.created",
+        "https://www.googleapis.com/auth/meetings.space.readonly",
+    ])
+    # Scan transcripts for action items and emit them as followup_needed
+    # rows in the conversation state machine.
+    extract_action_items: bool = True
+
+
+@dataclass
 class ConnectorsConfig:
     """Third-party connectors (Google Calendar, OneDrive, ...)."""
 
@@ -223,6 +274,13 @@ class ConnectorsConfig:
         default_factory=GoogleCalendarConnectorConfig
     )
     onedrive: OneDriveConnectorConfig = field(default_factory=OneDriveConnectorConfig)
+    github: GitHubConnectorConfig = field(default_factory=GitHubConnectorConfig)
+    google_contacts: GoogleContactsConnectorConfig = field(
+        default_factory=GoogleContactsConnectorConfig
+    )
+    google_meet: GoogleMeetConnectorConfig = field(
+        default_factory=GoogleMeetConnectorConfig
+    )
 
 
 @dataclass
@@ -408,6 +466,47 @@ def load_config(config_path: str | None = None) -> Config:
     if base := os.getenv("AUTONOMA_CONNECTOR_REDIRECT_BASE"):
         config.connectors.redirect_base_url = base
 
+    # GitHub
+    if cid := os.getenv("GITHUB_CLIENT_ID"):
+        config.connectors.github.client_id = cid
+    if cs := os.getenv("GITHUB_CLIENT_SECRET"):
+        config.connectors.github.client_secret = cs
+    if (gh_env := os.getenv("AUTONOMA_GITHUB_ENABLED")) is not None:
+        config.connectors.github.enabled = gh_env.lower() not in (
+            "0", "false", "no", "off", ""
+        )
+
+    # Google Contacts — reuse Google OAuth client when not explicitly set.
+    # Any env override (GOOGLE_CONTACTS_CLIENT_ID) wins; otherwise fall back
+    # to the Calendar client so a single Google Cloud project covers all
+    # three Google connectors with one set of credentials.
+    if cid := os.getenv("GOOGLE_CONTACTS_CLIENT_ID"):
+        config.connectors.google_contacts.client_id = cid
+    if cs := os.getenv("GOOGLE_CONTACTS_CLIENT_SECRET"):
+        config.connectors.google_contacts.client_secret = cs
+    if not config.connectors.google_contacts.client_id:
+        config.connectors.google_contacts.client_id = config.connectors.google_calendar.client_id
+    if not config.connectors.google_contacts.client_secret:
+        config.connectors.google_contacts.client_secret = config.connectors.google_calendar.client_secret
+    if (gco_env := os.getenv("AUTONOMA_GCONTACTS_ENABLED")) is not None:
+        config.connectors.google_contacts.enabled = gco_env.lower() not in (
+            "0", "false", "no", "off", ""
+        )
+
+    # Google Meet — same shared-credential pattern.
+    if cid := os.getenv("GOOGLE_MEET_CLIENT_ID"):
+        config.connectors.google_meet.client_id = cid
+    if cs := os.getenv("GOOGLE_MEET_CLIENT_SECRET"):
+        config.connectors.google_meet.client_secret = cs
+    if not config.connectors.google_meet.client_id:
+        config.connectors.google_meet.client_id = config.connectors.google_calendar.client_id
+    if not config.connectors.google_meet.client_secret:
+        config.connectors.google_meet.client_secret = config.connectors.google_calendar.client_secret
+    if (gm_env := os.getenv("AUTONOMA_GMEET_ENABLED")) is not None:
+        config.connectors.google_meet.enabled = gm_env.lower() not in (
+            "0", "false", "no", "off", ""
+        )
+
     return config
 
 
@@ -415,6 +514,9 @@ def _load_connectors_config(data: dict) -> ConnectorsConfig:
     """Build :class:`ConnectorsConfig` from a YAML sub-dict."""
     gc = data.get("google_calendar", {}) or {}
     od = data.get("onedrive", {}) or {}
+    gh = data.get("github", {}) or {}
+    gco = data.get("google_contacts", {}) or {}
+    gm = data.get("google_meet", {}) or {}
     return ConnectorsConfig(
         db_path=data.get("db_path", "workspace/connectors.db"),
         key_path=data.get("key_path", "workspace/.connector_key"),
@@ -424,6 +526,15 @@ def _load_connectors_config(data: dict) -> ConnectorsConfig:
         ),
         onedrive=OneDriveConnectorConfig(
             **{k: v for k, v in od.items() if v is not None}
+        ),
+        github=GitHubConnectorConfig(
+            **{k: v for k, v in gh.items() if v is not None}
+        ),
+        google_contacts=GoogleContactsConnectorConfig(
+            **{k: v for k, v in gco.items() if v is not None}
+        ),
+        google_meet=GoogleMeetConnectorConfig(
+            **{k: v for k, v in gm.items() if v is not None}
         ),
     )
 

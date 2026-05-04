@@ -31,14 +31,15 @@ from typing import Iterable
 KIND_EMAIL = "email"
 KIND_PHONE = "phone"
 KIND_HANDLE = "handle"
+KIND_GITHUB = "github"
 KIND_NATIVE = "native"
 
-_VALID_KINDS = {KIND_EMAIL, KIND_PHONE, KIND_HANDLE, KIND_NATIVE}
+_VALID_KINDS = {KIND_EMAIL, KIND_PHONE, KIND_HANDLE, KIND_GITHUB, KIND_NATIVE}
 
 # Cross-channel kinds — only these are eligible for auto-merge across
 # different channels, since e.g. a Telegram numeric "12345" and a Discord
 # numeric "12345" are unrelated.
-CROSS_CHANNEL_KINDS = frozenset({KIND_EMAIL, KIND_PHONE, KIND_HANDLE})
+CROSS_CHANNEL_KINDS = frozenset({KIND_EMAIL, KIND_PHONE, KIND_HANDLE, KIND_GITHUB})
 
 # Pragmatic — accepts anything with one ``@`` and a TLD-shaped suffix.
 # Avoids RFC 5321 territory; the cost of an over-strict regex is missed
@@ -55,6 +56,21 @@ _PHONE_RE = re.compile(r"(?<![\w])\+?\d{8,15}(?![\w])")
 # WhatsApp's own user_ids look like ``9234XXXXXXXX@c.us`` — strip the
 # suffix so the underlying phone matches against an extracted ``+9234…``.
 _WHATSAPP_SUFFIX_RE = re.compile(r"@(?:c|s)\.(?:us|whatsapp\.net)$", re.IGNORECASE)
+
+# GitHub login rules: 1–39 chars, alphanumeric or single hyphens, no
+# leading/trailing hyphen, no consecutive hyphens. Matched case-insensitively
+# but stored lower-cased. The negative-lookbehind on ``\w`` keeps us from
+# matching email-local-parts (``alice@example.com`` shouldn't yield ``alice``)
+# and the trailing ``\b`` similarly avoids matching half of an email handle.
+_GITHUB_MENTION_RE = re.compile(
+    r"(?<![\w@/])@([a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38})\b"
+)
+_GITHUB_LOGIN_RE = re.compile(
+    r"^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$"
+)
+# Channels where ``@mentions`` are likely to be github logins rather than
+# generic chat handles. Used by ``extract_github_logins`` to gate extraction.
+_GITHUB_CHANNELS = frozenset({"github"})
 
 
 @dataclass(frozen=True)
@@ -99,6 +115,17 @@ def normalize_handle(raw: str) -> str | None:
     return s
 
 
+def normalize_github_login(raw: str) -> str | None:
+    """Validate + lowercase a GitHub login. ``None`` if it doesn't match the
+    GitHub username grammar — keeps junk like ``-alice`` or ``a--b`` out of
+    the cross-channel match pool.
+    """
+    s = (raw or "").strip().lstrip("@").lower()
+    if not s or not _GITHUB_LOGIN_RE.match(s):
+        return None
+    return s
+
+
 def classify_user_id(channel: str, user_id: str) -> Identifier:
     """Best guess at the typed identity of a raw ``user_id``.
 
@@ -110,6 +137,11 @@ def classify_user_id(channel: str, user_id: str) -> Identifier:
         return Identifier(KIND_NATIVE, "")
 
     ch = (channel or "").lower()
+
+    if ch == "github":
+        norm = normalize_github_login(raw)
+        if norm:
+            return Identifier(KIND_GITHUB, norm)
 
     if ch == "gmail":
         norm = normalize_email(raw)
@@ -164,6 +196,44 @@ def extract_identifiers_from_text(text: str) -> list[Identifier]:
     return out
 
 
+def extract_github_logins(text: str) -> list[Identifier]:
+    """Pull ``@login`` mentions out of github-context text.
+
+    Gated by channel (callers should only run this on github-sourced
+    messages) because ``@alice`` in a Telegram chat is just as likely to
+    be a Telegram handle as a github login. The negative lookbehind on
+    ``\\w@/`` keeps us off email locals and ``user/repo`` paths.
+    """
+    if not text:
+        return []
+    seen: set[tuple[str, str]] = set()
+    out: list[Identifier] = []
+    for match in _GITHUB_MENTION_RE.findall(text):
+        norm = normalize_github_login(match)
+        if norm and (KIND_GITHUB, norm) not in seen:
+            seen.add((KIND_GITHUB, norm))
+            out.append(Identifier(KIND_GITHUB, norm))
+    return out
+
+
+def extract_identifiers_for_channel(channel: str, text: str) -> list[Identifier]:
+    """Channel-aware identifier extraction.
+
+    Layers on top of :func:`extract_identifiers_from_text` by also pulling
+    github logins out of github-channel messages. The default extractor
+    stays conservative (just emails + phones) because @mentions in chat
+    channels collide with too many other handle conventions.
+    """
+    out = extract_identifiers_from_text(text)
+    if (channel or "").lower() in _GITHUB_CHANNELS:
+        seen = {(i.kind, i.value) for i in out}
+        for ident in extract_github_logins(text):
+            if (ident.kind, ident.value) not in seen:
+                seen.add((ident.kind, ident.value))
+                out.append(ident)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # [LINK_IDENTITY: kind=value] tag — emitted by the LLM when it concludes
 # from conversation that two channels belong to the same person.
@@ -214,6 +284,9 @@ def _coerce(kind: str, value: str) -> Identifier | None:
     if kind == KIND_HANDLE:
         norm = normalize_handle(value)
         return Identifier(KIND_HANDLE, norm) if norm else None
+    if kind == KIND_GITHUB:
+        norm = normalize_github_login(value)
+        return Identifier(KIND_GITHUB, norm) if norm else None
     return None
 
 
