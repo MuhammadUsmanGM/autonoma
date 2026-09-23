@@ -198,7 +198,7 @@ export default function Traces() {
     return (
       <div className="p-10 flex flex-col items-center justify-center h-full text-center">
         <AlertTriangle className="text-[var(--error)] mb-4" size={32} />
-        <h3 className="text-lg font-semibold text-white">Telemetry Error</h3>
+        <h3 className="text-lg font-semibold text-white">Could not load traces</h3>
         <p className="text-[var(--text-muted)] mt-2 max-w-xs">{error}</p>
         <button onClick={() => { setError(''); load() }} className="mt-6 px-6 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-colors cursor-pointer">
           Retry
@@ -244,8 +244,8 @@ export default function Traces() {
       ) : traces.length === 0 ? (
         <div className="text-center py-20 reflective rounded-2xl">
           <Activity size={32} className="mx-auto mb-4 text-white/10" />
-          <p className="text-sm text-white/30 font-medium uppercase tracking-widest">No residency traces found</p>
-          <p className="text-xs text-white/15 mt-1 font-mono italic">Handshake required to initiate telemetry stream</p>
+          <p className="text-sm text-white/30 font-medium uppercase tracking-widest">No traces found</p>
+          <p className="text-xs text-white/15 mt-1 font-mono italic">Traces will appear after the agent processes messages.</p>
         </div>
       ) : (
         <div className="space-y-3">

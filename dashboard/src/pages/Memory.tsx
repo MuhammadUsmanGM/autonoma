@@ -30,7 +30,7 @@ export default function MemoryPage() {
       setMemories(regular)
       setStale(staleData)
     } catch (e) {
-      toast.error('Failed to sync cognitive registry')
+      toast.error('Could not load memories')
       console.error(e)
     } finally {
       setLoading(false)
@@ -66,9 +66,9 @@ export default function MemoryPage() {
       setMemories((prev) => prev.filter((m) => m.id !== id))
       setStale((prev) => prev.filter((m) => m.id !== id))
       setSelectedIds((prev) => prev.filter(i => i !== id))
-      toast.success('Neural path pruned')
+      toast.success('Memory deleted')
     } catch {
-      toast.error('Failed to prune memory')
+      toast.error('Could not delete memory')
     }
   }
 
@@ -81,7 +81,7 @@ export default function MemoryPage() {
       setStale((prev) => prev.filter((m) => m.id !== id))
       setSelectedIds((prev) => prev.filter(i => i !== id))
       if (action === 'review') {
-        toast.success('Cognitive node reinforced')
+        toast.success('Memory marked as important')
         load() 
       } else {
         toast.success('Information discarded')
@@ -96,14 +96,14 @@ export default function MemoryPage() {
     if (count === 0) return
     const promise = Promise.all(selectedIds.map(id => api.deleteMemory(id)))
     toast.promise(promise, {
-      loading: `Pruning ${count} neural nodes...`,
+      loading: `Deleting ${count} memories...`,
       success: () => {
         setMemories(prev => prev.filter(m => !selectedIds.includes(m.id)))
         setStale(prev => prev.filter(m => !selectedIds.includes(m.id)))
         setSelectedIds([])
-        return `${count} paths removed from registry`
+        return `${count} memories deleted`
       },
-      error: 'Bulk pruning failed'
+      error: 'Could not delete selected memories'
     })
   }
 
@@ -124,9 +124,9 @@ export default function MemoryPage() {
   const handleConsolidate = async () => {
     try {
       await api.consolidateMemory()
-      toast.success('Cognitive consolidation triggered in background')
+      toast.success('Memory cleanup started')
     } catch {
-      toast.error('Failed to start consolidation')
+      toast.error('Could not start memory cleanup')
     }
   }
 
@@ -140,7 +140,7 @@ export default function MemoryPage() {
       a.download = `autonoma-memory-export-${new Date().toISOString().split('T')[0]}.json`
       a.click()
       URL.revokeObjectURL(url)
-      toast.success('Cognitive backup generated')
+      toast.success('Memory export created')
     } catch {
       toast.error('Export failed')
     }
@@ -150,14 +150,14 @@ export default function MemoryPage() {
     <div className="p-10 space-y-8 pb-32">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">Cognitive Explorer</h2>
-          <p className="text-sm text-[var(--text-muted)]">Browse and manage the agent's neural resonance</p>
+          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Memory</h2>
+          <p className="text-sm text-[var(--text-muted)]">Browse and manage what the agent remembers.</p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleExport}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
-            title="Export Registry"
+                title="Export memories"
           >
             <Download size={14} />
             Export
@@ -165,7 +165,7 @@ export default function MemoryPage() {
           <button
             onClick={handleConsolidate}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
-            title="Trigger Consolidation"
+            title="Clean up old memories"
           >
             <Database size={14} />
             Consolidate
@@ -175,7 +175,7 @@ export default function MemoryPage() {
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--bg-faint)] border border-[var(--border-faint)] text-[var(--text)] hover:bg-[var(--overlay)] transition-colors cursor-pointer"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Sync Registry
+                Refresh memories
           </button>
         </div>
       </header>
@@ -188,7 +188,7 @@ export default function MemoryPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search within neural paths..."
+                placeholder="Search memories..."
             className="w-full bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl pl-12 pr-4 py-3 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] outline-none focus:border-[var(--accent)]/40 focus:ring-1 focus:ring-[var(--accent)]/20 transition-all shadow-xl"
           />
         </div>
@@ -262,7 +262,7 @@ export default function MemoryPage() {
                     onClick={() => handleReview(m.id, 'dismiss')}
                     className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
                   >
-                    Prune
+                    Delete
                   </button>
                   <button 
                     onClick={() => handleReview(m.id, 'review')}
@@ -278,8 +278,8 @@ export default function MemoryPage() {
             <div className="col-span-full">
               <EmptyState 
                 icon={Sparkles}
-                title="Cognitive Resonance Clear"
-                description="The maintenance buffer is healthy. No decaying neural nodes require immediate operator intervention."
+                title="Memory is up to date"
+                description="No memories need review right now."
               />
             </div>
           )}
@@ -292,7 +292,7 @@ export default function MemoryPage() {
         >
           <div className="p-6 border-b border-[var(--border)] bg-[var(--bg-faint)] flex items-center justify-between">
             <span className="text-xs font-bold text-[var(--text)] uppercase tracking-widest">Memory Matrix</span>
-            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight">{filtered.length} nodes active</span>
+            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight">{filtered.length} memories</span>
           </div>
           <MemoryTable 
             memories={filtered} 
@@ -318,7 +318,7 @@ export default function MemoryPage() {
                 {selectedIds.length}
               </div>
               <div>
-                <h4 className="text-sm font-bold text-[var(--text)]">Nodes targeted</h4>
+                <h4 className="text-sm font-bold text-[var(--text)]">Memories selected</h4>
                 <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Batch execution ready</p>
               </div>
             </div>
@@ -329,7 +329,7 @@ export default function MemoryPage() {
                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-white text-black hover:bg-white/90 transition-all cursor-pointer"
               >
                 <Trash2 size={16} />
-                Prune Selected
+                Delete selected
               </button>
               <button 
                 onClick={() => setSelectedIds([])}
@@ -343,13 +343,13 @@ export default function MemoryPage() {
       </AnimatePresence>
       <ConfirmDialog 
         isOpen={!!confirmDelete}
-        title={confirmDelete?.bulk ? "Confirm Batch Pruning" : "Prune Neural Node"}
+        title={confirmDelete?.bulk ? "Delete selected memories" : "Delete memory"}
         description={confirmDelete?.bulk 
-          ? `You are about to permanently delete ${selectedIds.length} memories from the cognitive registry. This action cannot be reversed.`
+          ? `You are about to permanently delete ${selectedIds.length} memories. This action cannot be undone.`
           : "Are you sure you want to discard this specific memory? This may affect the agent's long-term context."
         }
         isDestructive
-        confirmLabel={confirmDelete?.bulk ? `Prune ${selectedIds.length} Nodes` : "Discard Memory"}
+        confirmLabel={confirmDelete?.bulk ? `Delete ${selectedIds.length} memories` : "Delete memory"}
         onConfirm={() => {
           if (confirmDelete?.bulk) bulkDelete()
           else if (confirmDelete?.id) handleDelete(confirmDelete.id)

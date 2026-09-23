@@ -147,7 +147,7 @@ export default function Logs() {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input 
               type="text" 
-              placeholder="Search telemetry..."
+              placeholder="Search logs..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full bg-[var(--bg-faint)] border border-[var(--border)] rounded-lg pl-9 pr-4 py-1.5 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]/40 transition-colors"
@@ -202,7 +202,7 @@ export default function Logs() {
         {logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-[var(--text-muted)] opcity-50">
             <AlertTriangle size={32} className="mb-4 opacity-50" />
-            <p>No telemetry recorded yet.</p>
+            <p>No logs recorded yet.</p>
           </div>
         ) : (
           logs.map((log, i) => (

@@ -92,7 +92,7 @@ export default function LiveLogStream() {
       <header className="px-4 py-3 bg-white/[0.02] border-b border-white/5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Terminal size={14} className="text-[var(--accent)]" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">Live Telemetry</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">Live logs</span>
         </div>
         
         <div className="flex-1 max-w-sm relative">
@@ -156,7 +156,7 @@ export default function LiveLogStream() {
         {filteredLogs.length === 0 && (
            <div className="h-full flex flex-col items-center justify-center opacity-10">
               <Terminal size={32} className="mb-4" />
-              <p className="uppercase tracking-widest text-xs">Waiting for telemetry heartbeat...</p>
+              <p className="uppercase tracking-widest text-xs">Waiting for logs...</p>
            </div>
         )}
       </div>

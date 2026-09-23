@@ -88,7 +88,7 @@ export default function SoulEditor() {
           <div>
             <h2 className="text-2xl font-semibold text-[var(--text)] mb-1">Identity</h2>
             <p className="text-sm text-[var(--text-muted)]">
-              Define your agent's identity, behavior, and cognitive boundaries
+              Define the agent's identity, behavior, and boundaries.
             </p>
           </div>
         </div>
@@ -117,7 +117,7 @@ export default function SoulEditor() {
             className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-[var(--accent)] text-black hover:scale-[1.02] active:scale-[0.98] disabled:opacity-30 disabled:scale-100 transition-all cursor-pointer shadow-lg shadow-[var(--accent-glow)]"
           >
             {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-            Save SOUL
+              Save identity
           </button>
         </div>
       </header>

@@ -72,6 +72,7 @@ export default function Sidebar({ current, onChange, onToggleAlerts, mobileOpen,
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-1 custom-scrollbar">
+        <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">Workspace</p>
         {NAV_ITEMS.map(({ page, label, icon: Icon }) => {
           const active = current === page
           return (
@@ -95,10 +96,11 @@ export default function Sidebar({ current, onChange, onToggleAlerts, mobileOpen,
         })}
 
         {/* Divider */}
-        <div className="!my-4 mx-2 border-t border-[var(--border)]" />
+        <div className="!my-5 mx-2 border-t border-[var(--border)]" />
 
-        {/* System (separate from data pages) */}
+        {/* Settings and integrations */}
         <div className="space-y-1.5">
+          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">Connections & settings</p>
           {(() => {
             const active = current === 'soul'
             return (
@@ -116,7 +118,7 @@ export default function Sidebar({ current, onChange, onToggleAlerts, mobileOpen,
                   />
                 )}
                 <Sparkles size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="relative z-10">SOUL Editor</span>
+                <span className="relative z-10">Identity</span>
               </button>
             )
           })()}
@@ -245,7 +247,7 @@ export default function Sidebar({ current, onChange, onToggleAlerts, mobileOpen,
         >
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)] animate-pulse" />
-            <span className="text-[11px] font-bold text-[var(--text-muted)] group-hover:text-white uppercase tracking-widest">Live Telemetry</span>
+            <span className="text-[11px] font-bold text-[var(--text-muted)] group-hover:text-white uppercase tracking-widest">Live logs</span>
           </div>
           <span className="text-[10px] text-[var(--text-faint)] font-mono">DEBUG</span>
         </button>
@@ -273,8 +275,8 @@ export default function Sidebar({ current, onChange, onToggleAlerts, mobileOpen,
                    <div className="flex items-center gap-3">
                       <Terminal size={18} className="text-[var(--accent)]" />
                       <div>
-                        <h3 className="text-sm font-bold text-white uppercase tracking-widest">Neural Stream Inspector</h3>
-                        <p className="text-[10px] text-white/20">Active WebSocket: {window.location.host}/api/ws</p>
+                        <h3 className="text-sm font-bold text-white uppercase tracking-widest">Live logs</h3>
+                        <p className="text-[10px] text-white/20">Connection: {window.location.host}/api/ws</p>
                       </div>
                    </div>
                    <button 

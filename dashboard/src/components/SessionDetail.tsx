@@ -19,7 +19,7 @@ export default function SessionDetail({ sessionId, messages = [], onExport, onDe
     <div className="h-full flex flex-col min-h-0">
       <div className="px-6 py-4 border-b border-[var(--border)] shrink-0 bg-white/[0.01] flex items-center justify-between">
         <div>
-          <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Active Resonance Link</span>
+          <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Session details</span>
           <p className="text-xs text-white font-mono mt-1 opacity-40 truncate">{sessionId}</p>
         </div>
         <div className="flex items-center gap-2">

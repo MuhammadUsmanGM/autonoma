@@ -89,12 +89,12 @@ export default function Overview() {
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard label="System Uptime" value={formatUptime(stats.uptime_seconds)} icon={Clock} />
         <StatsCard label="Connected Channels" value={stats.channel_count} icon={Radio} accent />
-        <StatsCard label="Neural Memories" value={stats.memory_active} icon={Brain} accent />
+        <StatsCard label="Memories" value={stats.memory_active} icon={Brain} accent />
         <StatsCard label="Processed Sessions" value={stats.session_count} icon={MessageSquare} />
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Pulse / Activity Feed */}
+        {/* Recent activity */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -162,7 +162,7 @@ export default function Overview() {
                 </div>
               ))}
               {stats.active_channels.length === 0 && (
-                <p className="text-[10px] text-[var(--text-muted)] py-4 text-center">No active signals.</p>
+                <p className="text-[10px] text-[var(--text-muted)] py-4 text-center">No active channels.</p>
               )}
             </div>
           </motion.div>

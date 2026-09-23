@@ -149,11 +149,6 @@ export default function WhatsAppQRModal({ open, onClose }: Props) {
                   <div className="relative p-6 rounded-3xl bg-white shadow-2xl transition-transform duration-500 group-hover:scale-[1.02]">
                     <QRCodeSVG value={qr} size={220} level="H" includeMargin={false} />
                     
-                    {/* Corner accents for the QR holder */}
-                    <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-black/10 rounded-tl-lg" />
-                    <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-black/10 rounded-tr-lg" />
-                    <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-black/10 rounded-bl-lg" />
-                    <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-black/10 rounded-br-lg" />
                   </div>
                 </div>
 
@@ -252,7 +247,7 @@ export default function WhatsAppQRModal({ open, onClose }: Props) {
                   className="reflective flex items-center justify-center gap-2 w-full py-4 rounded-2xl text-sm font-black tracking-tight"
                 >
                   <RefreshCw size={16} />
-                  RETRY HANDSHAKE
+                  TRY AGAIN
                 </button>
               </motion.div>
             )}

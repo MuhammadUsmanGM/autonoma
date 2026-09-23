@@ -43,7 +43,7 @@ export default function AlertsPanel({ isOpen, onClose }: { isOpen: boolean, onCl
               {notifications.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center opacity-20">
                   <Bell size={48} className="mb-4" />
-                  <p className="text-sm font-bold uppercase tracking-widest">Resonance Stable</p>
+                  <p className="text-sm font-bold uppercase tracking-widest">System is healthy</p>
                   <p className="text-xs mt-1 lowercase">No critical events recorded</p>
                 </div>
               ) : (

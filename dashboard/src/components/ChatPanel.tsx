@@ -107,7 +107,7 @@ export default function ChatPanel() {
     } catch {
       const errMsg: ChatMessage = {
         role: 'assistant',
-        content: 'Failed to connect to the neural gateway. Is Autonoma active?',
+        content: 'Could not connect to Autonoma. Is the agent running?',
         timestamp: new Date().toISOString(),
       }
       setMessages((prev) => [...prev, errMsg])
@@ -152,9 +152,9 @@ export default function ChatPanel() {
                 <Sparkles className="text-[var(--accent)]" size={32} />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white tracking-tight">Direct Neural Link</h3>
+                <h3 className="text-lg font-bold text-white tracking-tight">Start a conversation</h3>
                 <p className="text-sm text-[var(--text-muted)] mt-1 max-w-[200px]">
-                  Send a transmission to initiate the handshake.
+                  Send a message to start.
                 </p>
               </div>
             </motion.div>

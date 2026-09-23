@@ -185,12 +185,12 @@ export default function Settings() {
   const models = MODEL_SUGGESTIONS[currentProvider] || []
 
   return (
-    <div className="p-10 space-y-10">
+    <div className="p-5 sm:p-8 space-y-8 max-w-[1400px] mx-auto w-full">
       {/* Header */}
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">System Configuration</h2>
-          <p className="text-sm text-[var(--text-muted)]">Modify agent parameters and communication pathways.</p>
+          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Settings</h2>
+          <p className="text-sm text-[var(--text-muted)]">Set up the AI provider and agent preferences.</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -198,7 +198,7 @@ export default function Settings() {
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/[0.05] hover:border-[var(--error)]/20 transition-all cursor-pointer"
           >
             <RefreshCw size={14} />
-            Restart Agent
+            Restart
           </button>
           <button
             onClick={handleSave}
@@ -235,8 +235,8 @@ export default function Settings() {
               <Cpu size={18} className="text-[var(--accent)]" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest">Neural Engine</h3>
-              <p className="text-[10px] text-[var(--text-muted)]">LLM provider, model, and API credentials</p>
+              <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest">AI provider</h3>
+              <p className="text-[10px] text-[var(--text-muted)]">Choose the AI service and API key.</p>
             </div>
           </div>
 
@@ -313,15 +313,15 @@ export default function Settings() {
               <HardDrive size={18} className="text-[var(--accent)]" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest">System Parameters</h3>
-              <p className="text-[10px] text-[var(--text-muted)]">Memory engine tuning and runtime behavior</p>
+              <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest">Agent settings</h3>
+              <p className="text-[10px] text-[var(--text-muted)]">Name, memory, and runtime options.</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Agent Name */}
             <div className="space-y-2">
-              <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Agent Name</label>
+              <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Name</label>
               <input
                 type="text"
                 value={getVal('name', 'Autonoma')}
@@ -342,7 +342,7 @@ export default function Settings() {
 
             {/* Context Window */}
             <div className="space-y-2">
-              <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Max Context Memories</label>
+              <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Memories in context</label>
               <input
                 type="number"
                 value={getVal('memory.max_context_memories', 15)}
@@ -353,7 +353,7 @@ export default function Settings() {
 
             {/* Importance Threshold */}
             <div className="space-y-2">
-              <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Importance Threshold</label>
+              <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Memory cleanup threshold</label>
               <input
                 type="number"
                 step="0.01"
@@ -368,7 +368,7 @@ export default function Settings() {
           <div className="mt-8 pt-6 border-t border-[var(--border)]">
             <div className="flex items-center gap-2 mb-4">
               <Shield size={14} className="text-[var(--text-muted)]" />
-              <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Gateway (Read-only)</span>
+              <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Connection details</span>
             </div>
             <div className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between items-center bg-black/20 p-2 rounded-lg border border-white/5">

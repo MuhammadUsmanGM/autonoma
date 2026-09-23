@@ -20,7 +20,7 @@ export default function MemoryTable({ memories, selectedIds, onToggleSelect, onT
   if (memories.length === 0) {
     return (
       <p className="text-sm text-[var(--text-muted)] py-8 text-center">
-        No memories found in the current residency.
+        No memories found.
       </p>
     )
   }
@@ -40,10 +40,10 @@ export default function MemoryTable({ memories, selectedIds, onToggleSelect, onT
                 className="w-4 h-4 rounded border-white/10 bg-black/40 accent-[var(--accent)] cursor-pointer"
               />
             </th>
-            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px]">Transmission</th>
-            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-28">Protocol</th>
-            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-24 text-right">Weight</th>
-            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-28 text-right">Registry</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px]">Memory</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-28">Type</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-24 text-right">Importance</th>
+            <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-28 text-right">Created</th>
             <th className="py-4 px-6 font-bold uppercase tracking-widest text-[10px] w-16"></th>
           </tr>
         </thead>

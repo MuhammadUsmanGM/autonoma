@@ -98,7 +98,7 @@ export default function Contacts() {
             Contacts
           </h1>
           <p className="text-sm text-[var(--text-muted)] mt-1">
-            Cross-channel identity registry. Merge duplicates so context follows the human.
+            Contacts from all connected channels. Merge duplicates to keep conversations together.
           </p>
         </div>
         <button

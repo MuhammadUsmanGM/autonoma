@@ -149,7 +149,7 @@ export default function Channels() {
     <div className="p-10 space-y-8 pb-32">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">Communication Pathways</h2>
+          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Channels</h2>
           <p className="text-sm text-[var(--text-muted)]">Monitor and orchestrate your autonomous channels.</p>
         </div>
         <button 

@@ -39,8 +39,8 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         localAlerts.push({
           id: `local-mem-${Date.now()}`,
           type: 'warning',
-          title: 'High Cognitive Load',
-          message: `${stats.memory_active} active nodes. Consider consolidation.`,
+          title: 'High memory usage',
+          message: `${stats.memory_active} active memories. Consider reviewing old entries.`,
           timestamp: new Date().toISOString(),
           read: false
         })

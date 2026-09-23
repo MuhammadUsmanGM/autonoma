@@ -61,7 +61,7 @@ export default function Sessions() {
       setSessions(prev => prev.filter(s => s.id !== selected))
       setSelected(null)
       setMessages([])
-      toast.success('Session registry purged')
+      toast.success('Session history deleted')
     } catch {
       toast.error('Purge command failed')
     }
@@ -77,14 +77,14 @@ export default function Sessions() {
     a.download = `session-${selected}.md`
     a.click()
     URL.revokeObjectURL(url)
-    toast.success('Resonance history exported')
+    toast.success('Session history exported')
   }
 
   return (
     <div className="p-10 space-y-8 h-screen flex flex-col">
       <header className="flex items-center justify-between shrink-0">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">Registry Logs</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--text)] mb-2">Sessions</h2>
           <p className="text-sm text-[var(--text-muted)]">Replay and audit historical human-agent interactions</p>
         </div>
         <button
@@ -134,14 +134,14 @@ export default function Sessions() {
 
              {/* Session list */}
              <div className="flex-1 rounded-2xl reflective p-4 overflow-y-auto scrollbar-hide min-h-0">
-                <h3 className="text-[10px] font-bold text-[var(--text-faint)] uppercase tracking-[0.2em] mb-4 px-2">Handshake Registry</h3>
+                <h3 className="text-[10px] font-bold text-[var(--text-faint)] uppercase tracking-[0.2em] mb-4 px-2">Saved sessions</h3>
                 {filteredSessions.length > 0 ? (
                   <SessionList sessions={filteredSessions} selected={selected} onSelect={selectSession} />
                 ) : (
                   <EmptyState 
                     icon={Filter}
-                    title="No Matching Resonance"
-                    description="Adjust your search parameters or platform filters to locate a specific handshake."
+                    title="No matching sessions"
+                    description="Try a different search or channel filter."
                   />
                 )}
              </div>
@@ -162,8 +162,8 @@ export default function Sessions() {
                   <History size={20} className="text-white/20" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-white/40 tracking-tight text-center">Neural Link Inactive</h4>
-                  <p className="text-xs text-white/20 mt-1 max-w-[200px] text-center">Select a historical handshake from the registry to replay transmission logs</p>
+                  <h4 className="text-sm font-bold text-white/40 tracking-tight text-center">No session selected</h4>
+                  <p className="text-xs text-white/20 mt-1 max-w-[200px] text-center">Select a session to view its messages.</p>
                 </div>
               </div>
             )}
@@ -172,9 +172,9 @@ export default function Sessions() {
       )}
       <ConfirmDialog 
         isOpen={showDeleteConfirm}
-        title="Permanently Prune Session?"
-        description="You are about to discard all interaction logs for this neural link. This cannot be undone and will remove the historical audit trail."
-        confirmLabel="Prune Resonance"
+        title="Delete session history?"
+        description="This will permanently delete the messages and logs for this session."
+        confirmLabel="Delete history"
         isDestructive
         onConfirm={handleDeleteSession}
         onClose={() => setShowDeleteConfirm(false)}
