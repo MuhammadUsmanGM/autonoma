@@ -211,7 +211,7 @@ export default function Traces() {
     <div className="p-10 space-y-8">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Execution Telemetry</h2>
+          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Traces</h2>
           <p className="text-sm text-[var(--text-muted)]">Real-time pipeline visualization and performance audit</p>
         </div>
         <button

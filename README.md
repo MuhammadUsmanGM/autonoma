@@ -83,8 +83,11 @@ Python runtime. If Python 3.11+ is not on your `PATH`, install it from
 `npm rebuild autonoma-ai`. The npm install itself will succeed either way —
 only the Python runtime step is deferred.
 
-Configure your API key via environment variable (exported in your shell, or in
-a `.env` file in the directory you run `autonoma` from):
+On first launch, the setup wizard presents a provider list and saves the
+matching credential and model for you. Supported direct providers are
+**OpenRouter, Anthropic, Google Gemini, OpenAI, Groq, and Mistral**. You can
+also configure the provider through environment variables (exported in your
+shell, or in a `.env` file in the directory you run `autonoma` from):
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...    # or ANTHROPIC_API_KEY
@@ -165,7 +168,7 @@ gateway:
   port: 8765          # WebSocket
   http_port: 8766     # REST API + Dashboard API
 llm:
-  provider: openrouter # or "anthropic"
+  provider: openrouter # or anthropic, google, openai, groq, mistral
   model: nvidia/llama-3.1-nemotron-nano-8b-v1:free
 ```
 

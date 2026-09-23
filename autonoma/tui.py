@@ -23,16 +23,10 @@ from rich.table import Table
 from rich.text import Text
 
 from autonoma.config import load_config, save_yaml_config
+from autonoma.models.catalog import PROVIDER_SPECS
 from autonoma.runtime import AgentRunner, LogRingBuffer, install_logging
 
-BANNER = r"""
- █████╗ ██╗   ██╗████████╗ ██████╗ ███╗   ██╗ ██████╗ ███╗   ███╗ █████╗
-██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗████╗  ██║██╔═══██╗████╗ ████║██╔══██╗
-███████║██║   ██║   ██║   ██║   ██║██╔██╗ ██║██║   ██║██╔████╔██║███████║
-██╔══██║██║   ██║   ██║   ██║   ██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║
-██║  ██║╚██████╔╝   ██║   ╚██████╔╝██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║
-╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝
-"""
+BANNER = "AUTONOMA"
 
 def _resolve_workspace() -> Path:
     """Pick the directory that holds .env / autonoma.yaml / .session/ for this
@@ -65,25 +59,6 @@ CHANNEL_DESCRIPTIONS = {
     "whatsapp": "WhatsApp via local bridge",
     "gmail": "Gmail IMAP/SMTP",
     "rest": "REST API (HTTP token)",
-}
-
-PROVIDERS = [
-    ("openrouter", "OpenRouter (recommended — one key, many models)"),
-    ("anthropic", "Anthropic (direct Claude API)"),
-]
-
-MODEL_SUGGESTIONS = {
-    "openrouter": [
-        "anthropic/claude-sonnet-4.5",
-        "anthropic/claude-haiku-4.5",
-        "openai/gpt-4o-mini",
-        "google/gemini-2.0-flash-exp",
-    ],
-    "anthropic": [
-        "claude-sonnet-4-6",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-    ],
 }
 
 # --- Keys ---
@@ -425,8 +400,16 @@ class AutonomaTUI:
                 f"[cyan]http://{cfg.gateway.host}:{cfg.gateway.http_port}[/]",
             )
         return Group(
-            self._banner_renderable(),
-            Panel(info, border_style=status_color, title="Autonoma"),
+            Panel(
+                Group(
+                    Align.center(Text("AUTONOMA", style="bold cyan")),
+                    Align.center(Text("AI agent control tower", style="dim")),
+                    Text(""),
+                    info,
+                ),
+                border_style=status_color,
+                title="Autonoma",
+            ),
             Text(""),
         )
 
@@ -440,7 +423,7 @@ class AutonomaTUI:
             self._render_logs(tail_only=True, scroll=0),
             console=self.console,
             refresh_per_second=refresh_hz,
-            screen=True,
+            transient=True,
         ) as live:
             scroll = 0
             follow = True  # auto-scroll to bottom
@@ -947,16 +930,15 @@ class AutonomaTUI:
     def _setup_wizard(self, forced: bool = False) -> None:
         idx = self._arrow_select(
             title="[bold]Step 1 of 3 — LLM provider[/]",
-            items=[f"{name}  —  {desc}" for name, desc in PROVIDERS],
+            items=[f"{spec.label}  —  {spec.description}" for spec in PROVIDER_SPECS],
             header_renderable=self._banner_renderable,
             allow_back=not forced,
         )
         if idx is None:
             return
-        provider, _ = PROVIDERS[idx]
-        env_key_name = (
-            "OPENROUTER_API_KEY" if provider == "openrouter" else "ANTHROPIC_API_KEY"
-        )
+        spec = PROVIDER_SPECS[idx]
+        provider = spec.key
+        env_key_name = spec.env_key
 
         self._print_banner()
         self.console.print(Rule("[bold]Step 2 of 3 — API key[/]", style="cyan"))
@@ -992,7 +974,7 @@ class AutonomaTUI:
                 "[dim]Press Ctrl+C to quit instead.[/]"
             )
 
-        suggestions = MODEL_SUGGESTIONS[provider]
+        suggestions = list(spec.models)
         options = list(suggestions) + ["Custom (type your own)"]
         idx = self._arrow_select(
             title=f"[bold]Step 3 of 3 — Model[/] [dim](provider: {provider})[/]",
@@ -1685,8 +1667,7 @@ class AutonomaTUI:
             build_frame(),
             console=self.console,
             refresh_per_second=10,
-            screen=True,
-            transient=False,
+            transient=True,
         ) as live:
             while True:
                 key = read_key()
@@ -1735,15 +1716,16 @@ class AutonomaTUI:
 
     def _is_first_run(self) -> bool:
         load_dotenv(self.env_path, override=True)
-        if any(
-            os.getenv(k)
-            for k in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "AUTONOMA_LLM_API_KEY")
-        ):
+        cfg = self._safe_load_config()
+        provider = os.getenv("AUTONOMA_LLM_PROVIDER", "") or (
+            cfg.llm.provider if cfg else ""
+        )
+        spec = next((item for item in PROVIDER_SPECS if item.key == provider), None)
+        if os.getenv("AUTONOMA_LLM_API_KEY") or (spec and os.getenv(spec.env_key)):
             return False
         # Also accept an inline api_key in autonoma.yaml — the config loader
         # supports it (cfg.llm.api_key), so a user who hand-configured the
         # YAML should not be pushed through the wizard again.
-        cfg = self._safe_load_config()
         if cfg and getattr(cfg.llm, "api_key", None):
             return False
         return True

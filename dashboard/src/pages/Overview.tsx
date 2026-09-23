@@ -72,16 +72,16 @@ export default function Overview() {
   }
 
   return (
-    <div className="p-10 space-y-10">
+    <div className="p-5 sm:p-8 space-y-8 max-w-[1600px] mx-auto w-full">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-[var(--text)] mb-2">Systems Overview</h2>
+          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Overview</h2>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-xs text-[var(--success)] font-bold uppercase tracking-widest bg-[var(--success)]/10 px-2 py-0.5 rounded">
               <Activity size={12} />
               Operational
             </span>
-            <span className="text-xs text-[var(--text-muted)] font-medium">Last updated: Just now</span>
+            <span className="text-xs text-[var(--text-muted)] font-medium">Updated just now</span>
           </div>
         </div>
       </header>
@@ -93,26 +93,26 @@ export default function Overview() {
         <StatsCard label="Processed Sessions" value={stats.session_count} icon={MessageSquare} />
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Pulse / Activity Feed */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="xl:col-span-2 rounded-2xl reflective p-8 flex flex-col"
+          className="xl:col-span-2 rounded-lg reflective p-6 flex flex-col"
         >
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest flex items-center gap-2">
               <Activity size={16} className="text-[var(--accent)]" />
-              Recent Pulses
+              Recent activity
             </h3>
-            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight">Real-time Telemetry</span>
+            <span className="text-xs text-[var(--text-muted)]">Latest agent runs</span>
           </div>
           
           <div className="space-y-4">
             {recentTraces.map((trace) => (
               <div 
                 key={trace.id}
-                className="group flex items-center gap-4 p-4 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent-dim)] transition-all cursor-pointer"
+                className="group flex items-center gap-4 p-4 rounded-md bg-[var(--bg-faint)] border border-[var(--border-faint)] hover:border-[var(--border-bright)] transition-colors cursor-pointer"
               >
                 <div className={`w-2 h-2 rounded-full shrink-0 ${trace.status === 'completed' ? 'bg-[var(--success)] shadow-lg shadow-[var(--success)]/20' : trace.status === 'error' ? 'bg-[var(--error)] shadow-lg shadow-[var(--error)]/20' : 'bg-blue-400 shadow-lg shadow-blue-400/20'}`} />
                 <div className="flex-1 min-w-0">
@@ -133,8 +133,8 @@ export default function Overview() {
             ))}
             {recentTraces.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center opacity-40">
-                <Archive size={32} className="mb-4 text-[var(--text-muted)]" />
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">No activity pulses detected</p>
+                <Archive size={28} className="mb-4 text-[var(--text-muted)]" />
+                  <p className="text-sm text-[var(--text-muted)]">No recent activity</p>
               </div>
             )}
           </div>
@@ -145,17 +145,17 @@ export default function Overview() {
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex-1 rounded-2xl reflective p-8"
+            className="flex-1 rounded-lg reflective p-6"
           >
             <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest mb-6 flex items-center gap-2">
               <Radio size={16} className="text-[var(--accent)]" />
-              Pathways
+              Channels
             </h3>
             <div className="space-y-3">
               {stats.active_channels.map((ch) => (
                 <div
                   key={ch}
-                  className="px-4 py-3 rounded-xl bg-[var(--bg-faint)] border border-[var(--border-faint)] flex items-center justify-between"
+                  className="px-4 py-3 rounded-md bg-[var(--bg-faint)] border border-[var(--border-faint)] flex items-center justify-between"
                 >
                   <span className="text-[11px] font-bold text-[var(--text)] uppercase tracking-wider">{ch}</span>
                   <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] glow-sm" />
@@ -172,17 +172,17 @@ export default function Overview() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1 }}
-            className="rounded-2xl reflective p-8 flex flex-col"
+            className="rounded-lg reflective p-6 flex flex-col"
           >
             <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-widest mb-6 flex items-center gap-2">
               <Brain size={16} className="text-[var(--accent)]" />
-              Cognitive
+              Memory
             </h3>
             <div className="space-y-6">
-              <div className="p-4 rounded-xl bg-[var(--accent-dim)] border border-[var(--accent)]/10">
+                <div className="p-4 rounded-md bg-[var(--accent-dim)] border border-[var(--accent)]/20">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-[var(--accent)]">Active</span>
-                  <span className="text-lg font-bold text-white">{stats.memory_active}</span>
+                  <span className="text-lg font-semibold text-[var(--text)]">{stats.memory_active}</span>
                 </div>
                 <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
                   <div 

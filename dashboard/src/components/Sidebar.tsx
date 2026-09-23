@@ -22,20 +22,28 @@ interface Props {
   current: Page
   onChange: (page: Page) => void
   onToggleAlerts: () => void
+  mobileOpen: boolean
+  onClose: () => void
 }
 
-export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
+export default function Sidebar({ current, onChange, onToggleAlerts, mobileOpen, onClose }: Props) {
   const { unreadCount } = useNotifications()
   const [showDebug, setShowDebug] = useState(false)
 
   return (
-    <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0 z-20 font-sans">
+    <>
+    <div
+      onClick={onClose}
+      className={`fixed inset-0 z-40 bg-black/40 lg:hidden ${mobileOpen ? 'block' : 'hidden'}`}
+      aria-hidden="true"
+    />
+    <aside className={`w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col h-screen sticky top-0 z-50 font-sans transition-transform duration-200 max-lg:fixed max-lg:left-0 max-lg:top-0 max-lg:bottom-0 ${mobileOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}`}>
       {/* Brand & Alerts */}
-      <div className="px-6 py-9 flex items-center justify-between">
+      <div className="px-5 py-5 flex items-center justify-between border-b border-[var(--border)]">
         <img 
           src="/logo.webp" 
           alt="Autonoma" 
-          className="h-10 w-auto object-contain brightness-110 drop-shadow-[0_0_15px_rgba(245,158,11,0.2)]" 
+          className="h-8 w-auto object-contain"
         />
         
         <button 
@@ -52,28 +60,35 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
             </span>
           )}
         </button>
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={onClose}
+          className="lg:hidden min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-faint)] hover:text-[var(--text)]"
+        >
+          <X size={19} />
+        </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-4 space-y-1.5 custom-scrollbar">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-1 custom-scrollbar">
         {NAV_ITEMS.map(({ page, label, icon: Icon }) => {
           const active = current === page
           return (
             <button
               key={page}
               onClick={() => onChange(page)}
-              className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
+                className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group cursor-pointer ${
+                active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               {active && (
                 <motion.div
                   layoutId="active-nav"
-                  className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/20 rounded-lg"
                 />
               )}
-              <Icon size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
+              <Icon size={17} className="relative z-10" />
               <span className="relative z-10">{label}</span>
             </button>
           )
@@ -219,7 +234,7 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 space-y-4">
+      <div className="p-3 space-y-3 border-t border-[var(--border)]">
         <div className="flex justify-center">
           <ThemeToggle />
         </div>
@@ -277,5 +292,6 @@ export default function Sidebar({ current, onChange, onToggleAlerts }: Props) {
         )}
       </AnimatePresence>
     </aside>
+    </>
   )
 }

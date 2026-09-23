@@ -86,7 +86,7 @@ export default function SoulEditor() {
             <Sparkles size={24} className="text-[var(--accent)]" />
           </div>
           <div>
-            <h2 className="text-3xl font-bold tracking-tight text-white mb-1">SOUL Editor</h2>
+            <h2 className="text-2xl font-semibold text-[var(--text)] mb-1">Identity</h2>
             <p className="text-sm text-[var(--text-muted)]">
               Define your agent's identity, behavior, and cognitive boundaries
             </p>

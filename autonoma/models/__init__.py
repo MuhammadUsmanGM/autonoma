@@ -16,4 +16,25 @@ def create_provider(config: LLMConfig) -> LLMProvider:
 
         return OpenRouterProvider(api_key=config.api_key, model=config.model)
 
+    if config.provider == "google":
+        from autonoma.models.google import GoogleProvider
+
+        return GoogleProvider(api_key=config.api_key, model=config.model)
+
+    compatible = {
+        "openai": ("https://api.openai.com/v1", "openai"),
+        "groq": ("https://api.groq.com/openai/v1", "groq"),
+        "mistral": ("https://api.mistral.ai/v1", "mistral"),
+    }
+    if config.provider in compatible:
+        from autonoma.models.compatible import CompatibleProvider
+
+        base_url, name = compatible[config.provider]
+        return CompatibleProvider(
+            api_key=config.api_key,
+            model=config.model,
+            base_url=base_url,
+            name=name,
+        )
+
     raise ValueError(f"Unknown LLM provider: {config.provider}")

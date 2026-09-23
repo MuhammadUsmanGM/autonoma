@@ -65,9 +65,14 @@ async def run(
 
     # 2. Validate API key
     if not config.llm.api_key:
+        from autonoma.models.catalog import provider_spec
+        spec = provider_spec(config.llm.provider)
+        key_name = spec.env_key if spec else "AUTONOMA_LLM_API_KEY"
         logger.error(
-            "No API key configured. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, "
-            "or AUTONOMA_LLM_API_KEY in your environment or .env file."
+            "No API key configured for provider '%s'. Set %s or "
+            "AUTONOMA_LLM_API_KEY in your environment or .env file.",
+            config.llm.provider,
+            key_name,
         )
         sys.exit(1)
 

@@ -363,11 +363,20 @@ def load_config(config_path: str | None = None) -> Config:
     )
 
     # Override LLM API key from environment (check provider-specific keys too)
+    provider_keys = {
+        "openrouter": "OPENROUTER_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "google": "GOOGLE_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+    }
+    selected_provider = os.getenv("AUTONOMA_LLM_PROVIDER", config.llm.provider).lower()
     api_key = (
         os.getenv("AUTONOMA_LLM_API_KEY")
-        or os.getenv("OPENROUTER_API_KEY")
-        or os.getenv("ANTHROPIC_API_KEY")
-        or ""
+        or os.getenv(provider_keys.get(selected_provider, ""), "")
+        or (os.getenv("OPENROUTER_API_KEY", "") if selected_provider == "openrouter" else "")
+        or (os.getenv("ANTHROPIC_API_KEY", "") if selected_provider in ("anthropic", "claude") else "")
     )
     if api_key:
         config.llm.api_key = api_key

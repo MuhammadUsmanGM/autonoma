@@ -268,7 +268,7 @@ export default function Tasks() {
     <div className="p-10 space-y-8 h-full flex flex-col overflow-y-auto">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Task Queue</h2>
+          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Tasks</h2>
           <p className="text-sm text-[var(--text-muted)]">Autonomous work items scheduled for execution</p>
         </div>
         <div className="flex items-center gap-3">

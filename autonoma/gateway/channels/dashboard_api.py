@@ -545,7 +545,15 @@ def register_dashboard_routes(
                     set_key(str(env_path), "AUTONOMA_LLM_MODEL", llm["model"], quote_mode="always")
                 if "api_key" in llm and llm["api_key"]:
                     provider = llm.get("provider", os.getenv("AUTONOMA_LLM_PROVIDER", "openrouter"))
-                    env_key = "OPENROUTER_API_KEY" if provider == "openrouter" else "ANTHROPIC_API_KEY"
+                    env_keys = {
+                        "openrouter": "OPENROUTER_API_KEY",
+                        "anthropic": "ANTHROPIC_API_KEY",
+                        "google": "GOOGLE_API_KEY",
+                        "openai": "OPENAI_API_KEY",
+                        "groq": "GROQ_API_KEY",
+                        "mistral": "MISTRAL_API_KEY",
+                    }
+                    env_key = env_keys.get(provider, "AUTONOMA_LLM_API_KEY")
                     os.environ[env_key] = llm["api_key"]
                     set_key(str(env_path), env_key, llm["api_key"], quote_mode="always")
 

@@ -12,6 +12,10 @@ import type { AppConfig } from '../types'
 const PROVIDERS = [
   { value: 'openrouter', label: 'OpenRouter', desc: 'One key, 100+ models' },
   { value: 'anthropic', label: 'Anthropic', desc: 'Direct Claude API' },
+  { value: 'google', label: 'Google Gemini', desc: 'Direct Gemini API' },
+  { value: 'openai', label: 'OpenAI', desc: 'Direct GPT API' },
+  { value: 'groq', label: 'Groq', desc: 'Fast open-model inference' },
+  { value: 'mistral', label: 'Mistral', desc: 'Direct Mistral API' },
 ]
 
 const MODEL_SUGGESTIONS: Record<string, { value: string; label: string }[]> = {
@@ -25,6 +29,26 @@ const MODEL_SUGGESTIONS: Record<string, { value: string; label: string }[]> = {
     { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 ($3.00 / 1M)' },
     { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 ($0.25 / 1M)' },
     { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 ($15.00 / 1M)' },
+  ],
+  google: [
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  ],
+  openai: [
+    { value: 'gpt-4o', label: 'GPT-4o' },
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+  ],
+  groq: [
+    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
+    { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B' },
+    { value: 'openai/gpt-oss-120b', label: 'GPT OSS 120B' },
+  ],
+  mistral: [
+    { value: 'mistral-large-latest', label: 'Mistral Large' },
+    { value: 'mistral-small-latest', label: 'Mistral Small' },
+    { value: 'codestral-latest', label: 'Codestral' },
   ],
 }
 
@@ -219,7 +243,7 @@ export default function Settings() {
           {/* Provider */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Provider</label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {PROVIDERS.map((p) => {
                 const active = currentProvider === p.value
                 return (

@@ -6,7 +6,7 @@ gateway:
   http_port: 8766     # REST API + webhooks
 
 llm:
-  # provider options: "anthropic", "openrouter"
+  # provider options: openrouter, anthropic, google, openai, groq, mistral
   provider: "openrouter"
   # api_key: loaded from env var (.env file) — see .env.example
   # OpenRouter models: anthropic/claude-sonnet-4-6, openai/gpt-4o, google/gemini-2.0-flash-001
