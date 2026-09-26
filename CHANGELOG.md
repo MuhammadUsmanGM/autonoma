@@ -5,6 +5,21 @@ All notable changes to Autonoma will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Launcher self-heals without npm install scripts.** npm's install-scripts
+  policy can silently block the package `postinstall`, leaving the Python
+  `.venv` missing. The old auto-recovery in `bin/autonoma.js` called
+  `npm rebuild`, which is subject to the same policy — it exited 0 while
+  skipping the setup script, so `autonoma` kept telling users to install
+  Python even when Python 3.11+ was present. The launcher now detects the
+  missing venv and bootstraps it directly (`python -m venv .venv` +
+  `pip install -e .`), independent of npm's allowScripts configuration. The
+  recovery help text and `scripts/install.js` bail message now point to
+  `npm rebuild -g --allow-scripts=autonoma-ai autonoma-ai` instead of a
+  rebuild that could silently no-op.
+
 ## [1.0.2] - 2026-05-05
 
 ### Added

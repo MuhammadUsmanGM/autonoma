@@ -46,7 +46,8 @@ function bail(msg) {
       (IS_WIN ? ".venv\\Scripts\\pip" : ".venv/bin/pip") +
       " install -e ."
   );
-  warn("Or run: npm rebuild autonoma-ai");
+  warn("Or run: npm rebuild -g --allow-scripts=autonoma-ai autonoma-ai");
+  warn("(Or just run `autonoma` — it will set up the Python runtime itself.)");
   console.log("");
   process.exit(0);
 }
