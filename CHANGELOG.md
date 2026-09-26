@@ -5,7 +5,7 @@ All notable changes to Autonoma will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.4] - 2026-09-26
 
 ### Fixed
 - **Launcher self-heals without npm install scripts.** npm's install-scripts
@@ -16,9 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Python even when Python 3.11+ was present. The launcher now detects the
   missing venv and bootstraps it directly (`python -m venv .venv` +
   `pip install -e .`), independent of npm's allowScripts configuration. The
-  recovery help text and `scripts/install.js` bail message now point to
+  recovery help text and `scripts/install.js` bail messages now point to
   `npm rebuild -g --allow-scripts=autonoma-ai autonoma-ai` instead of a
   rebuild that could silently no-op.
+- **WhatsApp bridge self-install.** When auto-spawn found
+  `whatsapp-bridge/` without `node_modules`, the adapter only logged "run
+  `npm install` yourself" and gave up. It now runs the install itself
+  (60→300s timeout, output captured), and if `node_modules` is still missing
+  afterwards it explains that npm's install-scripts policy likely blocked
+  puppeteer's Chromium download, with the exact allow-scripts command to
+  fix it.
+- **README install instructions** now pass `--allow-scripts=autonoma-ai`
+  so the postinstall actually runs on policy-restricted npm setups, and
+  mention the launcher's first-run self-setup as a fallback.
+- **prepublish secret-file check actually runs.** The banned-path scan in
+  `scripts/prepublish-check.js` parsed `npm pack --json` output as an array
+  (`data[0].files`), but npm >= 7 returns an object keyed by package name —
+  so the scan always inspected zero files and reported "tarball clean"
+  unconditionally. It now handles both shapes and fails loudly if the file
+  list can't be read, instead of passing a check that never ran.
 
 ## [1.0.2] - 2026-05-05
 

@@ -74,14 +74,16 @@ Structured JSON logs, a Prometheus `/metrics` endpoint (agent loops, LLM tokens 
 ### Install via npm (recommended)
 
 ```bash
-npm install -g autonoma-ai
+npm install -g --allow-scripts=autonoma-ai autonoma-ai
 ```
 
 The postinstall step creates a Python virtual environment and installs the
 Python runtime. If Python 3.11+ is not on your `PATH`, install it from
 [python.org](https://www.python.org/downloads/) and run
-`npm rebuild autonoma-ai`. The npm install itself will succeed either way —
-only the Python runtime step is deferred.
+`npm rebuild -g --allow-scripts=autonoma-ai autonoma-ai`. The npm install
+itself will succeed either way — only the Python runtime step is deferred.
+(And if install scripts were blocked or skipped, running `autonoma` will
+set the Python runtime up for you on first launch.)
 
 On first launch, the setup wizard presents a provider list and saves the
 matching credential and model for you. Supported direct providers are
@@ -151,7 +153,7 @@ workspace/            # Agent workspace — SOUL.md, memory, task outputs
 |---------|----------------------|-------|
 | **Telegram** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_PROXY_URL` | Create bot via [@BotFather](https://t.me/BotFather). Proxy optional (SOCKS5 supported). |
 | **Discord** | `DISCORD_BOT_TOKEN` | Requires `MESSAGE_CONTENT` privileged intent enabled in Discord Developer Portal. |
-| **WhatsApp** | `WHATSAPP_BRIDGE_URL` | Runs via `whatsapp-bridge/` sidecar. Scan QR code on first launch. |
+| **WhatsApp** | `WHATSAPP_BRIDGE_URL` | Runs via `whatsapp-bridge/` sidecar. Autonoma spawns and installs it automatically; scan the QR code on first launch. |
 | **Gmail** | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` | Use an [App Password](https://support.google.com/accounts/answer/185833), not your account password. |
 | **REST API** | `AUTONOMA_REST_API_TOKEN` | Token is optional. Endpoint: `POST /api/chat` |
 | **CLI** | Always enabled | Interactive terminal with rich formatting. |

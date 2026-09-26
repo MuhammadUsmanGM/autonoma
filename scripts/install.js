@@ -148,6 +148,6 @@ try {
   main();
 } catch (e) {
   error("Unexpected postinstall error: " + (e && e.message ? e.message : e));
-  warn("Continuing without Python setup. Run `npm rebuild autonoma-ai` after installing Python.");
+  warn("Continuing without Python setup. Run `autonoma` once — it sets up the Python runtime itself — or `npm rebuild -g --allow-scripts=autonoma-ai autonoma-ai`.");
   process.exit(0);
 }

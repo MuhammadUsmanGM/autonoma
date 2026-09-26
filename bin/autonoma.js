@@ -14,33 +14,11 @@ const VENV = path.join(ROOT, ".venv");
 const PYTHON = IS_WIN
   ? path.join(VENV, "Scripts", "python.exe")
   : path.join(VENV, "bin", "python");
-const PIP = IS_WIN
-  ? path.join(VENV, "Scripts", "pip.exe")
-  : path.join(VENV, "bin", "pip");
 
 const RED = "\x1b[31m";
 const YEL = "\x1b[33m";
 const CYN = "\x1b[36m";
 const OFF = "\x1b[0m";
-
-function printMissingPythonHelp() {
-  console.error("");
-  console.error(`${RED}[autonoma]${OFF} Python runtime is not set up.`);
-  console.error("");
-  console.error(`${YEL}Autonoma needs Python 3.11+ to run.${OFF}`);
-  console.error("");
-  console.error("  1. Install Python from:");
-  console.error(`     ${CYN}https://www.python.org/downloads/${OFF}`);
-  console.error("     (make sure to check 'Add Python to PATH' on Windows)");
-  console.error("");
-  console.error("  2. Re-run the installer:");
-  console.error(`     ${CYN}npm rebuild -g autonoma-ai${OFF}`);
-  console.error("");
-  console.error(
-    "  3. Then run " + CYN + "autonoma" + OFF + " again."
-  );
-  console.error("");
-}
 
 function findPython() {
   // Same candidate order as scripts/install.js.

@@ -81,7 +81,13 @@ try {
     encoding: "utf-8",
   });
   const data = JSON.parse(out);
-  const entries = (data[0] && data[0].files) || [];
+  // npm >= 7 returns an object keyed by package name; older npm returned an
+  // array. Handle both — and never report "clean" on a vacuous parse.
+  const pkgInfo = Array.isArray(data) ? data[0] : data[pkg.name] || data[Object.keys(data)[0]];
+  const entries = (pkgInfo && pkgInfo.files) || [];
+  if (entries.length === 0) {
+    fail("could not read file list from npm pack --json — secret-file check skipped");
+  }
   const paths = entries.map((f) => f.path);
   const banned = [
     /^\.env$/,
@@ -96,7 +102,7 @@ try {
     const hit = paths.find((p) => rx.test(p));
     if (hit) fail(`tarball contains forbidden path: ${hit} (matched ${rx})`);
   }
-  ok(`tarball clean (${paths.length} files)`);
+  ok(`tarball clean (${paths.length} files checked)`);
 } catch (e) {
   fail(`npm pack --dry-run failed: ${e.message}`);
 }

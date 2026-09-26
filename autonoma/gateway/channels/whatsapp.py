@@ -291,11 +291,35 @@ class WhatsAppChannel(ChannelAdapter):
 
         if not (bridge_dir / "node_modules").exists():
             logger.error(
-                "whatsapp-bridge at %s has no node_modules — run `npm install` "
-                "in that directory first.",
+                "whatsapp-bridge at %s has no node_modules — attempting "
+                "`npm install` in that directory first.",
                 bridge_dir,
             )
-            return
+            npm_install = subprocess.run(
+                [npm, "install", "--no-audit", "--no-fund"],
+                cwd=str(bridge_dir),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )  # noqa: S603
+            if npm_install.returncode != 0:
+                logger.error(
+                    "`npm install` in %s failed (exit %d): %s — run it "
+                    "manually in that directory, then restart Autonoma.",
+                    bridge_dir,
+                    npm_install.returncode,
+                    (npm_install.stderr or npm_install.stdout or "").strip()[:500],
+                )
+                return
+            if not (bridge_dir / "node_modules").exists():
+                logger.error(
+                    "`npm install` reported success but %s/node_modules is "
+                    "still missing — npm may be blocking install scripts "
+                    "(puppeteer needs a postinstall to download Chromium). "
+                    "Run `npm install --allow-scripts=whatsapp-web.js` there.",
+                    bridge_dir,
+                )
+                return
 
         # npm.cmd on Windows, npm on POSIX. If node is installed via nvm
         # on Windows the .cmd shim is what lives on PATH.
