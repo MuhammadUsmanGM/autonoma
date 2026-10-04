@@ -5,6 +5,36 @@ All notable changes to Autonoma will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **TUI rebuilt on Textual.** The interactive TUI was a hand-rolled loop:
+  raw-mode `termios`/`msvcrt` key reading, `atexit` guards to restore the
+  terminal, a `_drain_stdin()` that had to swallow orphaned bytes after every
+  screen, and Rich `Live(screen=True)` frames repainted on each keypress. It
+  flickered, frames stacked in scrollback, and keys often needed pressing
+  twice. `autonoma/tui.py` is now a Textual `App` with a real screen stack —
+  Textual owns the alt-screen and input decoding, so the raw-mode plumbing,
+  the stdin drain, and the manual scroll maths are all gone.
+- **Feature parity kept**: live log viewer, status (config / channels /
+  memory / proxy health), channel toggle-configure-reconnect with inline
+  WhatsApp QR, OAuth connectors, and the three-step setup wizard. Blocking
+  work (agent stop/start, HTTP, DB reads) runs behind a modal in a thread, so
+  the UI no longer freezes for up to 15s while the agent restarts; long waits
+  (OAuth callback, QR poll) are cancellable with Escape.
+- **New `autonoma/splash.py`.** Responsive amber block-letter `AUTONOMA` logo,
+  built once from a bitmap font with five width/height variants so it steps
+  down cleanly on smaller terminals.
+- **Fixed `json` NameError in TUI HTTP helpers.** `_http_get` / `_http_post`
+  called `json.loads` but the module never imported `json` at module scope,
+  so connector status lookups failed with a swallowed `name 'json' is not
+  defined`.
+
+### Added
+- `textual>=8.0,<9.0` as a runtime dependency, and `tests/tui_test.py`
+  driving the real widget tree through Textual's headless pilot (menu
+  navigation, logs, status, channels, wizard save, splash variants).
+
 ## [1.0.4] - 2026-09-26
 
 ### Fixed

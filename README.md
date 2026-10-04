@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">Autonoma</h1>
   <p align="center">
-    <strong>Open-source AI agent platform. Build, deploy, and run digital employees.</strong>
+    <strong>A personal AI assistant that runs on your own machine.</strong>
   </p>
   <p align="center">
     <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
@@ -11,387 +11,243 @@
     <img src="https://img.shields.io/badge/SQLite-FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
     <img src="https://img.shields.io/npm/v/autonoma-ai?style=flat-square&color=cb3837&logo=npm" alt="npm version">
     <img src="https://img.shields.io/npm/dm/autonoma-ai?style=flat-square&color=cb3837&logo=npm" alt="npm downloads">
-    <img src="https://img.shields.io/bundlephobia/min/autonoma-ai?style=flat-square&color=8b5cf6" alt="install size">
     <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square" alt="PRs Welcome">
   </p>
 </p>
 
 ---
 
-Autonoma is a modular AI agent that operates as a **digital full-time employee (FTE)**. It connects to your communication channels, remembers context across conversations, executes tasks with built-in tools, and exposes a high-fidelity HUD for real-time monitoring — all from a single Python process.
+Talk to it on **Telegram, Discord, WhatsApp or Gmail**. It remembers what you
+told it before, searches the web, reads and writes files, and connects to your
+calendar, OneDrive and GitHub. You can watch everything it does in a terminal
+panel or a web dashboard.
 
-## Features
+It all runs as a single process on your own computer — no cloud account, no
+subscription.
 
-### Multi-Channel Communication
-Connect once, reach everywhere. Autonoma natively supports **Telegram**, **Discord**, **WhatsApp**, **Gmail**, and a **REST API**. Features intelligent routing and multi-session persistence.
+## Install
 
-### Proactive Monitoring & Alerts
-The platform is no longer purely reactive. A background polling service continuously monitors system health, memory thresholds, and channel connectivity, triggering **HUD Alerts** through a slide-over triage panel.
-
-### High-Fidelity Dashboard
-A premium React + TypeScript HUD with context-aware **Dual-Theme support** (Light/Dark).
-- **Execution Telemetry**: Live Gantt-style visualizations tracking pipeline latency.
-- **Neural Registry**: Memory explorer with bulk-pruning and stale node maintenance.
-- **Soul Evolution**: Identity editor with integrated **diff view** to track personality shifts.
-- **Session Audit Log**: Advanced search and filtering to replay historical interactions.
-
-### Intelligent Memory
-SQLite + FTS5 powered memory with **BM25 ranked retrieval**. Memories are scored by relevance, importance, and recency. Features automatic deduplication and importance decay.
-
-### Tool execution & Sandbox
-Secure execution environment with built-in tools for web search, file operations, and shell command chaining in isolated workspaces. **Hardened by default**: shell is off until binaries are allowlisted, path traversal is rejected via `Path.relative_to()` containment, secrets and shell-hook env vars never reach child processes, and every tool call is appended to a per-session JSONL audit log.
-
-### Production Observability
-Structured JSON logs, a Prometheus `/metrics` endpoint (agent loops, LLM tokens + cost per model, tool latency, channel status, HTTP latency), always-on `/healthz` and `/readyz` probes, and optional **OpenTelemetry** tracing — each agent loop becomes one span with the 9 pipeline stages as events.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                     Channels                         │
-│  Telegram · Discord · WhatsApp · Gmail · REST · CLI  │
-└──────────────────────┬──────────────────────────────┘
-                       │
-              ┌────────▼────────┐
-              │     Gateway     │
-              │  Route · Auth   │
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │     Cortex      │
-              │  Agent · LLM    │◄────► Memory (SQLite + FTS5)
-              │  Context · Loop │      BM25 · Decay · Dedup
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │    Executor     │
-              │  Sandbox · Tools│
-              └─────────────────┘
-```
-
-## Quick Start
-
-### Install via npm (recommended)
+You need **Node.js 18+** and **Python 3.11+**.
 
 ```bash
 npm install -g --allow-scripts=autonoma-ai autonoma-ai
-```
-
-The postinstall step creates a Python virtual environment and installs the
-Python runtime. If Python 3.11+ is not on your `PATH`, install it from
-[python.org](https://www.python.org/downloads/) and run
-`npm rebuild -g --allow-scripts=autonoma-ai autonoma-ai`. The npm install
-itself will succeed either way — only the Python runtime step is deferred.
-(And if install scripts were blocked or skipped, running `autonoma` will
-set the Python runtime up for you on first launch.)
-
-On first launch, the setup wizard presents a provider list and saves the
-matching credential and model for you. Supported direct providers are
-**OpenRouter, Anthropic, Google Gemini, OpenAI, Groq, and Mistral**. You can
-also configure the provider through environment variables (exported in your
-shell, or in a `.env` file in the directory you run `autonoma` from):
-
-```bash
-export OPENROUTER_API_KEY=sk-or-...    # or ANTHROPIC_API_KEY
 autonoma
 ```
 
-> **Requires:** Node.js 18+ and Python 3.11+
-> CI users can set `AUTONOMA_SKIP_POSTINSTALL=1` to skip the Python step
-> during `npm install`.
+The first launch opens a short setup wizard: pick a provider, paste your API
+key, choose a model. It saves all of that into a `.env` file for you.
 
-### Install from source
+Already know your key? Skip the wizard:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+autonoma
+```
+
+<details>
+<summary>Running from source instead</summary>
 
 ```bash
 git clone https://github.com/MuhammadUsmanGM/autonoma.git
 cd autonoma
-
-cp .env.example .env
-# Edit .env — add your API key
-
+cp .env.example .env    # then put your API key in it
 pip install -e .
 python -m autonoma
 ```
+</details>
 
-### Dashboard
+<details>
+<summary>Python not found?</summary>
 
-The npm package ships the pre-built dashboard (`dashboard/dist/`) — it is
-served automatically by the Autonoma gateway on `http://127.0.0.1:8766`
-when you run `autonoma`. No separate dev server is needed for end users.
-
-Dashboard contributors working from a source clone can run it standalone:
+Install it from [python.org](https://www.python.org/downloads/), then:
 
 ```bash
-cd dashboard
-npm install
-npm run dev
-# Opens at http://localhost:5173
+npm rebuild -g --allow-scripts=autonoma-ai autonoma-ai
 ```
 
-## Project Structure
+If npm skipped the setup scripts, just running `autonoma` will finish the
+Python setup for you.
+</details>
 
-```
-autonoma/
-├── cortex/           # Agent core — reasoning loop, context assembly, sessions
-├── gateway/          # Channel adapters, HTTP server, routing, auth
-├── executor/         # Sandboxed tool execution engine
-├── memory/           # SQLite + FTS5 store, retrieval, consolidation
-├── models/           # LLM provider abstraction (Anthropic, OpenRouter)
-├── skills/           # Tool registry and loader
-├── config.py         # Dataclass-based configuration
-├── schema.py         # Core data models (Message, AgentResponse, etc.)
-└── main.py           # Bootstrap and wiring
+Supported providers: **OpenRouter, Anthropic, Google Gemini, OpenAI, Groq,
+Mistral.**
 
-dashboard/            # React + TypeScript + Vite + Tailwind frontend
-whatsapp-bridge/      # Node.js sidecar for WhatsApp Web (QR scan)
-workspace/            # Agent workspace — SOUL.md, memory, task outputs
-```
+## The terminal panel
 
-## Channel Setup
+`autonoma` opens a small control panel. Arrow keys to move, **Enter** to
+select, **Esc** to go back.
 
-| Channel | Environment Variables | Notes |
-|---------|----------------------|-------|
-| **Telegram** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_PROXY_URL` | Create bot via [@BotFather](https://t.me/BotFather). Proxy optional (SOCKS5 supported). |
-| **Discord** | `DISCORD_BOT_TOKEN` | Requires `MESSAGE_CONTENT` privileged intent enabled in Discord Developer Portal. |
-| **WhatsApp** | `WHATSAPP_BRIDGE_URL` | Runs via `whatsapp-bridge/` sidecar. Autonoma spawns and installs it automatically; scan the QR code on first launch. |
-| **Gmail** | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` | Use an [App Password](https://support.google.com/accounts/answer/185833), not your account password. |
-| **REST API** | `AUTONOMA_REST_API_TOKEN` | Token is optional. Endpoint: `POST /api/chat` |
-| **CLI** | Always enabled | Interactive terminal with rich formatting. |
+| | |
+|---|---|
+| **Live logs** | What the agent is doing, right now |
+| **Check status** | Provider, channels, memory stats, dashboard link |
+| **Manage channels** | Turn channels on/off, enter credentials, reconnect |
+| **Manage connectors** | Sign in and out of Google, Microsoft and GitHub |
+| **Open web dashboard** | Opens the browser UI |
+| **Restart** / **Quit** | Restart the agent, or exit |
 
-## Configuration
+## Connect a channel
 
-Autonoma loads config with this precedence: **env vars > .env > autonoma.yaml > defaults**.
+Set these in `.env`, or do it from the terminal panel above.
+
+| Channel | Variables | Notes |
+|---------|-----------|-------|
+| **Telegram** | `TELEGRAM_BOT_TOKEN` | Make a bot with [@BotFather](https://t.me/BotFather). |
+| **Discord** | `DISCORD_BOT_TOKEN` | Enable the `MESSAGE_CONTENT` intent in the Discord developer portal. |
+| **WhatsApp** | `WHATSAPP_BRIDGE_URL` | Scans a QR code on first launch. The sidecar starts for you. |
+| **Gmail** | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` | Use an [App Password](https://support.google.com/accounts/answer/185833), not your normal password. |
+| **REST API** | `AUTONOMA_REST_API_TOKEN` | Optional. `POST /api/chat` |
+| **CLI** | — | Always on. |
+
+## Settings
+
+Settings are read in this order: **environment variables → `.env` →
+`autonoma.yaml` → built-in defaults.**
 
 ```yaml
 # autonoma.yaml
 name: Autonoma
 gateway:
   host: 127.0.0.1
-  port: 8765          # WebSocket
-  http_port: 8766     # REST API + Dashboard API
+  port: 8765        # WebSocket
+  http_port: 8766   # REST API + dashboard
 llm:
-  provider: openrouter # or anthropic, google, openai, groq, mistral
+  provider: openrouter   # or anthropic, google, openai, groq, mistral
   model: nvidia/llama-3.1-nemotron-nano-8b-v1:free
 ```
 
-Key environment variables:
-
-| Variable | Description |
-|----------|-------------|
-| `AUTONOMA_LLM_PROVIDER` | `openrouter` or `anthropic` |
-| `OPENROUTER_API_KEY` | OpenRouter API key |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `AUTONOMA_LLM_MODEL` | Model name override |
+| Variable | What it does |
+|----------|--------------|
+| `AUTONOMA_LLM_PROVIDER` | Which provider to use |
+| `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` | Your API key |
+| `AUTONOMA_LLM_MODEL` | Override the model |
 | `AUTONOMA_LOG_LEVEL` | `debug`, `info`, `warning`, `error` |
 
-## Observability
+## Web dashboard
 
-Autonoma ships production-grade observability out of the box — structured
-logs, Prometheus metrics, health probes, and optional OpenTelemetry tracing.
+Pre-built and shipped with the package — it starts automatically at
+<http://127.0.0.1:8766>. Nothing to set up.
 
-### Health probes
-
-Always-on, no configuration required:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /healthz` | Liveness — returns 200 while the process is running. |
-| `GET /readyz` | Readiness — returns 200 once the HTTP server is accepting traffic, 503 during startup/shutdown. |
-
-### Structured JSON logs
-
-Set `AUTONOMA_LOG_FORMAT=json` (or `observability.log_format: json` in
-`autonoma.yaml`) to emit one JSON object per log line. Designed to be piped
-into Loki, Elasticsearch, CloudWatch, or any log aggregator that understands
-JSON.
-
-```json
-{"timestamp":"2026-04-24T12:34:56.789Z","level":"INFO","logger":"autonoma","message":"Processed message in 1.23s","asctime":"12:34:56"}
-```
-
-### Prometheus metrics
-
-A `/metrics` endpoint exposes the full metric set in Prometheus text format.
-Scrape it with any standard config:
-
-```yaml
-# prometheus.yml
-scrape_configs:
-  - job_name: autonoma
-    static_configs:
-      - targets: ["localhost:8766"]
-```
-
-Exposed series:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `autonoma_agent_loop_total{status,channel}` | counter | Total agent loops by outcome. |
-| `autonoma_agent_loop_duration_seconds` | histogram | End-to-end loop latency. |
-| `autonoma_llm_tokens_total{direction,model}` | counter | Input / output tokens per model. |
-| `autonoma_llm_cost_usd_total{model}` | counter | Estimated LLM spend. |
-| `autonoma_tool_calls_total{tool,status}` | counter | Tool invocations (ok / timeout / error / denied). |
-| `autonoma_tool_duration_seconds{tool}` | histogram | Tool execution latency. |
-| `autonoma_channel_status{channel}` | gauge | 1=running, 0=stopped, -1=error. |
-| `autonoma_http_requests_total{method,path,status}` | counter | HTTP requests served. |
-| `autonoma_http_request_duration_seconds{method,path}` | histogram | Request latency. |
-| `autonoma_build_info{version,python}` | gauge | Build metadata. |
-
-Disable with `AUTONOMA_METRICS_ENABLED=false` if you want `/metrics` off.
-
-### OpenTelemetry (optional)
-
-Ship traces to any OTLP-compatible backend (Jaeger, Tempo, Honeycomb,
-Datadog, etc.). The core install stays lean — OTel only activates when both
-the optional dependency is installed and an endpoint is configured.
+Working on the dashboard itself?
 
 ```bash
-pip install autonoma[observability]
-export AUTONOMA_OTEL_ENDPOINT=http://localhost:4318/v1/traces
-export AUTONOMA_OTEL_SERVICE_NAME=autonoma-prod
-# Optional: authenticated collectors
-export AUTONOMA_OTEL_HEADERS="x-api-key=...,x-tenant=acme"
-autonoma
+cd dashboard
+npm install
+npm run dev    # http://localhost:5173
 ```
 
-Each agent loop becomes one span (`autonoma.agent.loop`) with the 9 pipeline
-stages as span events, plus attributes for model, tokens, cost, and elapsed
-time — so you can slice latency by channel or cost by model directly in your
-tracing UI.
+## How it's put together
 
-## Built-in Tools
-
-| Tool | Description |
-|------|-------------|
-| `web_search` | Search the web and return summarized results |
-| `file_read` | Read file contents from the workspace |
-| `file_write` | Write or create files in the workspace |
-| `file_list` | List files and directories in the workspace |
-| `shell` | Execute shell commands in a sandboxed environment |
-
-## Connectors
-
-OAuth connectors expose third-party tools to the agent only while an account
-is connected. Sign in / out from the dashboard's **Connectors** page (or the
-TUI). Tokens are encrypted at rest. Set credentials in `.env`; per-connector
-pairs override the shared `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-
-| Connector | Tools | Notes |
-|-----------|-------|-------|
-| Google Calendar | `calendar_list_events`, `calendar_create_event`, `calendar_find_free_slot` | Required by Meet for link creation. |
-| Google Contacts | `contacts_search`, `contacts_get`, `contacts_resolve` | Auto-enriches the contact registry: matched senders are bumped from stranger to acquaintance, with saved name + org copied across. VIPs are never overwritten. |
-| Google Meet | `meet_list_conferences`, `meet_get_transcript`, `meet_create_link` | Transcripts are scanned for action items and emitted into the conversation state machine as 48h follow-ups. Link creation calls Calendar. |
-| OneDrive | `onedrive_*` | Microsoft Graph file access. |
-| GitHub | `github_search_issues`, `github_get_issue`, `github_get_pr`, `github_list_notifications`, `github_comment`, `github_create_issue` | Mutating tools (`github_comment`, `github_create_issue`) require approval like any other dangerous tool. |
-
-## Security & Sandbox
-
-Tool execution goes through a single sandbox boundary (`autonoma/executor/sandbox.py`)
-that enforces path containment, env scrubbing, POSIX rlimits, output caps, and
-per-session rate limits. Every tool call — success, denial, timeout, or error —
-is appended as a JSON line to `<session_dir>/audit.log`.
-
-### Defaults
-
-* **Shell is disabled out of the box.** `shell_allowed_binaries` is an empty
-  list, which means the `shell` tool returns a "disabled" error until an
-  operator explicitly allowlists binaries.
-* **Argv mode only.** Tools pass `args: [binary, ...]`; shell-string mode with
-  metacharacter parsing is opt-in via `shell_allow_strings: true`.
-* **No network egress from subprocess tools.** `allow_network: false` strips
-  proxy env vars and blocks known network binaries (`curl`, `wget`, `nc`, ...)
-  from the shell allowlist at call time.
-* **Secrets never reach children.** API keys, bot tokens, and shell-hook vars
-  (`BASH_ENV`, `LD_PRELOAD`, ...) are stripped from subprocess env regardless
-  of `env_allowlist`.
-* **Path traversal is rejected.** All file paths resolve through
-  `path_safety.resolve_within`, which uses `Path.relative_to()` rather than a
-  prefix match — `../workspace_evil/secret` can't escape a `workspace/` base.
-* **Write extensions are gated.** Binaries, shared libraries, and shell
-  scripts land on a denylist (`.exe`, `.so`, `.dll`, `.sh`, ...).
-
-### YAML surface
-
-```yaml
-# autonoma.yaml
-sandbox:
-  timeout: 15.0                 # wall-clock seconds per tool call
-  max_output_bytes: 10485760    # combined stdout+stderr cap (bytes)
-  max_memory_mb: 256            # RLIMIT_AS (POSIX only)
-  max_cpu_seconds: 30           # RLIMIT_CPU (POSIX only)
-  max_processes: 64             # RLIMIT_NPROC (POSIX only)
-  max_file_size_mb: 50          # per-file write ceiling
-  allow_network: false          # subprocess network egress
-  env_allowlist: [PATH, HOME, LANG, LC_ALL, TZ, TMPDIR]
-  shell_allowed_binaries: []    # e.g. [ls, cat, grep, git] to enable shell
-  shell_allow_strings: false    # enables `command:` string mode + metachar check
-  write_denied_extensions:      # file_write refuses these suffixes
-    [.exe, .bat, .cmd, .ps1, .sh, .bash, .so, .dylib, .dll, .com, .scr, .msi]
-  backend: direct               # 'direct' (default) | 'docker' (scaffold — not yet implemented)
-  rate_limit_calls: 60          # per-session sliding-window cap
-  rate_limit_window: 60.0       # window in seconds
+```
+   Telegram · Discord · WhatsApp · Gmail · REST · CLI
+                         │
+                    ┌────▼────┐
+                    │ Gateway │  routes and authenticates
+                    └────┬────┘
+                         │
+                    ┌────▼────┐          ┌──────────────┐
+                    │ Cortex  │◄────────►│ Memory       │
+                    │ thinks  │          │ SQLite, FTS5 │
+                    └────┬────┘          └──────────────┘
+                         │
+                    ┌────▼─────┐
+                    │ Executor │  runs tools in a sandbox
+                    └──────────┘
 ```
 
-### Recommended profiles
+```
+autonoma/
+├── cortex/           # the agent: reasoning loop, context, sessions
+├── gateway/          # channel adapters, HTTP server, routing, auth
+├── executor/         # sandboxed tool running
+├── memory/           # SQLite + FTS5 storage and search
+├── models/           # one interface for every LLM provider
+├── connectors/       # Google, Microsoft, GitHub OAuth + tools
+├── skills/           # tool registry
+├── tui.py            # the terminal panel
+├── splash.py         # the AUTONOMA logo
+└── main.py           # start-up and wiring
 
-* **Read-only research agent** — leave `shell_allowed_binaries` empty. The
-  agent keeps `web_search`, `file_read`, `file_list`, and a `file_write` that
-  refuses binaries and respects `max_file_size_mb`.
-* **Developer agent** — `shell_allowed_binaries: [ls, cat, grep, git, npm]`,
-  still `shell_allow_strings: false`. Tool calls look like
-  `args: ["git", "status"]`; metacharacters in arguments are literal strings.
-* **Power-user shell** — add `shell_allow_strings: true` and include `sh` or
-  `bash` in the allowlist. This is the only path to pipes/redirects and is
-  only appropriate for fully trusted deployments.
-
-### Platform notes
-
-* **Linux/macOS**: memory, CPU, and process caps are enforced via
-  `resource.setrlimit` in a subprocess `preexec_fn`.
-* **Windows**: the `resource` module is absent — rlimits become advisory.
-  Wall-clock timeout and output caps still apply; the sandbox logs a
-  one-time warning on startup. For production on Windows, run Autonoma
-  inside WSL2 or a Linux container.
-* **Docker backend**: scaffolded but not implemented. Selecting
-  `backend: docker` raises a clear startup error. For container isolation
-  today, run the Autonoma process itself inside a container.
-
-### Audit log
-
-Every tool call appends a JSONL record:
-
-```json
-{"ts": "2026-04-24T10:12:03.412+00:00", "session_id": "s_abc", "tool": "shell",
- "tool_use_id": "toolu_01...", "input_hash": "9f2a...", "status": "ok",
- "elapsed_ms": 42, "error": null}
+dashboard/            # React web dashboard
+whatsapp-bridge/      # Node sidecar that talks to WhatsApp Web
+workspace/            # the agent's files: identity, memory, output
+tests/                # test suite
 ```
 
-`input_hash` is a sha256-16 of the canonicalized input — enough to
-correlate replays without storing argument content.
+## What it can do
 
-## Tech Stack
+| Tool | Does |
+|------|------|
+| `web_search` | Searches the web and summarises the results |
+| `file_read` / `file_write` / `file_list` | Works with files in `workspace/` |
+| `shell` | Runs commands — **off by default**, see below |
 
-| Category | Technology |
-|----------|-----------|
-| **Backend** | Python 3.11+, asyncio, SQLite + FTS5, WebSockets |
-| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS |
-| **LLM Providers** | Anthropic Claude, OpenRouter (100+ models) |
-| **Channels** | python-telegram-bot, whatsapp-web.js, Discord raw gateway, IMAP/SMTP |
-| **Memory** | BM25 ranked retrieval, importance decay, Jaccard dedup |
+**Connectors** add more, and only work while you're signed in: Google
+Calendar (list/create events, find a free slot), Google Contacts (search and
+resolve people), Google Meet (links and transcripts), OneDrive (files), and
+GitHub (search, read and comment on issues and PRs).
+Sign in from the terminal panel or the dashboard's **Connectors** page.
+
+## Safety
+
+Tool calls go through one sandbox, and the defaults are deliberately
+restrictive:
+
+- **Shell is off until you switch it on** — nothing runs until you allowlist
+  specific commands (e.g. `ls`, `git`).
+- **Secrets never reach child processes** — API keys and tokens are stripped
+  from the environment first.
+- **Files can't escape `workspace/`** — path traversal is rejected outright.
+- **No network access from spawned processes** by default.
+- **Everything is logged** — each tool call is appended to
+  `<session>/audit.log`.
+
+To loosen any of this, set keys under `sandbox:` in `autonoma.yaml`; the full
+list of options and what they mean is in
+[`autonoma/executor/sandbox.py`](autonoma/executor/sandbox.py) (`SandboxConfig`).
+
+Worth knowing: on Windows the memory/CPU limits are advisory only — for a
+real deployment use WSL2 or a container.
+
+## Monitoring
+
+Always on, no setup:
+
+| | |
+|---|---|
+| `GET /healthz` | 200 while the process is alive |
+| `GET /readyz` | 200 once it's accepting traffic, 503 while starting |
+| `GET /metrics` | Prometheus counters — agent runs, LLM tokens and cost, tool latency, channel status |
+
+Set `AUTONOMA_LOG_FORMAT=json` for one JSON object per log line, and
+`AUTONOMA_METRICS_ENABLED=false` to turn `/metrics` off. Tracing to
+Jaeger/Honeycomb/etc. is available with `pip install autonoma[observability]`.
+
+## Development
+
+```bash
+pip install -e .
+pip install pytest
+pytest tests/
+```
+
+Tests live in `tests/` as `*_test.py`.
+
+| | |
+|---|---|
+| **Backend** | Python 3.11+, asyncio, SQLite + FTS5 |
+| **Terminal UI** | Textual, Rich |
+| **Dashboard** | React 19, TypeScript, Vite, Tailwind |
+| **Channels** | python-telegram-bot, whatsapp-web.js, Discord, IMAP/SMTP |
 
 ## Contributing
 
-Contributions are welcome! Here's how:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/your-feature`)
-3. **Commit** your changes (`git commit -m "Add your feature"`)
-4. **Push** to the branch (`git push origin feature/your-feature`)
-5. **Open** a Pull Request
+Fork it, branch it (`git checkout -b feature/your-thing`), commit, push, open a
+PR. Issues and PRs are welcome.
 
 ## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ---
 

@@ -16,6 +16,9 @@ dependencies = [
     "python-dotenv>=1.0,<2.0",
     "httpx>=0.27,<1.0",
     "rich>=13.0,<15.0",
+    # Powers the interactive TUI (autonoma/tui.py) — screens, menus,
+    # live log viewer, and terminal input handling.
+    "textual>=8.0,<9.0",
     # Used to render the WhatsApp reconnect QR inline in the TUI. Pure-Python
     # with no C extensions, so it's cheap to keep in the core deps.
     "qrcode>=7.4,<9.0",
