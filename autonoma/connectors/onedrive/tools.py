@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import urllib.parse
 import urllib.request
 from typing import TYPE_CHECKING, Any
 
+from autonoma.connectors._util import to_thread as _to_thread
 from autonoma.connectors.oauth import http_json
 from autonoma.executor.path_safety import resolve_within
 from autonoma.executor.tools.base import BaseTool, ToolPermission
@@ -27,10 +27,6 @@ def _perm(filesystem: bool = False) -> ToolPermission:
         secrets=True,
         description="Calls Microsoft Graph (OneDrive) on behalf of a connected account.",
     )
-
-
-def _to_thread(fn, *args, **kwargs):
-    return asyncio.get_event_loop().run_in_executor(None, lambda: fn(*args, **kwargs))
 
 
 class _BaseOneDriveTool(BaseTool):

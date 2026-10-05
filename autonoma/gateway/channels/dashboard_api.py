@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +19,24 @@ from autonoma.schema import Message
 logger = logging.getLogger(__name__)
 
 _start_time = time.time()
+
+
+def _ok(data: Any) -> tuple[int, dict[str, str], str]:
+    """200 with a JSON body. Headers are fresh per call: the HTTP server
+    merges CORS headers into whatever dict a handler returns."""
+    return 200, {"Content-Type": "application/json"}, json.dumps(data)
+
+
+def _err(status: int, data: Any) -> tuple[int, dict[str, str], str]:
+    """Any non-200 status with a JSON body."""
+    return status, {"Content-Type": "application/json"}, json.dumps(data)
+
+
+def _fail(route: str, exc: Exception) -> tuple[int, dict[str, str], str]:
+    """Log an unexpected handler error and turn it into a 500 response."""
+    logger.error("Dashboard %s error: %s", route, exc)
+    return _err(500, {"error": str(exc)})
+
 
 # Proxy health cache — keyed by channel name ("telegram", "whatsapp", ...).
 # Populated by the background poller started in register_dashboard_routes and
@@ -93,7 +110,6 @@ def register_dashboard_routes(
     """Register all dashboard API routes on the HTTP server."""
 
     async def handle_stats(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             mem_stats = await memory_store.get_stats()
             sessions_list = await session_manager.list_sessions()
@@ -107,13 +123,11 @@ def register_dashboard_routes(
                 "memory_archived": mem_stats["total_archived"],
                 "session_count": len(sessions_list),
             }
-            return 200, headers, json.dumps(data)
+            return _ok(data)
         except Exception as e:
-            logger.error("Dashboard /api/stats error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/stats", e)
 
     async def handle_memories(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
             # Check for search query param: /api/memories/search?q=...
@@ -122,24 +136,22 @@ def register_dashboard_routes(
                 params = dict(p.split("=", 1) for p in query_string.split("&") if "=" in p)
                 q = params.get("q", "").strip()
                 if not q:
-                    return 400, headers, json.dumps({"error": "Missing q parameter"})
+                    return _err(400, {"error": "Missing q parameter"})
                 from urllib.parse import unquote_plus
                 q = unquote_plus(q)
                 entries = await memory_store.search(q, limit=50)
                 data = [_entry_to_dict(e) for e in entries]
-                return 200, headers, json.dumps(data)
+                return _ok(data)
 
             # Default: return all active memories
             all_memories = await asyncio.to_thread(
                 memory_store._db.get_all_active, limit=500
             )
-            return 200, headers, json.dumps(all_memories)
+            return _ok(all_memories)
         except Exception as e:
-            logger.error("Dashboard /api/memories error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/memories", e)
 
     async def handle_memories_search(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
             q = ""
@@ -150,35 +162,31 @@ def register_dashboard_routes(
                 )
                 q = params.get("q", "").strip()
             if not q:
-                return 400, headers, json.dumps({"error": "Missing q parameter"})
+                return _err(400, {"error": "Missing q parameter"})
             from urllib.parse import unquote_plus
             q = unquote_plus(q)
             entries = await memory_store.search(q, limit=50)
             data = [_entry_to_dict(e) for e in entries]
-            return 200, headers, json.dumps(data)
+            return _ok(data)
         except Exception as e:
-            logger.error("Dashboard /api/memories/search error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/memories/search", e)
 
     async def handle_memory_delete(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
             # Extract ID from path: /api/memories/123
             parts = path.strip("/").split("/")
             if len(parts) < 3:
-                return 400, headers, json.dumps({"error": "Missing memory ID"})
+                return _err(400, {"error": "Missing memory ID"})
             memory_id = int(parts[2])
             await asyncio.to_thread(memory_store._db.soft_delete, memory_id)
-            return 200, headers, json.dumps({"deleted": memory_id})
+            return _ok({"deleted": memory_id})
         except (ValueError, IndexError):
-            return 400, headers, json.dumps({"error": "Invalid memory ID"})
+            return _err(400, {"error": "Invalid memory ID"})
         except Exception as e:
-            logger.error("Dashboard DELETE /api/memories error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("DELETE /api/memories", e)
 
     async def handle_sessions(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "").split("?")[0].strip("/")
             parts = path.split("/")  # ["api", "sessions"] or ["api", "sessions", "<id>"]
@@ -197,25 +205,23 @@ def register_dashboard_routes(
                     }
                     for e in history
                 ]
-                return 200, headers, json.dumps({"session_id": session_id, "messages": entries})
+                return _ok({"session_id": session_id, "messages": entries})
 
             # List view: /api/sessions
             sessions = await session_manager.list_sessions()
             for s in sessions:
                 s_parts = s["id"].split("_")
                 s["channel"] = s_parts[0] if s_parts else "unknown"
-            return 200, headers, json.dumps(sessions)
+            return _ok(sessions)
         except Exception as e:
-            logger.error("Dashboard /api/sessions error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/sessions", e)
 
     async def handle_chat(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             data = request.get("json", {})
             content = data.get("message", "").strip()
             if not content:
-                return 400, headers, json.dumps({"error": "Missing 'message' field"})
+                return _err(400, {"error": "Missing 'message' field"})
 
             user_id = data.get("user_id", "dashboard_user")
             channel_id = data.get("channel_id", "dashboard")
@@ -234,27 +240,23 @@ def register_dashboard_routes(
             # never rehydrate history on reload/navigation.
             resolved_session_id = channel_id
             try:
-                agent = gateway_router._agent_router._agents.get(
-                    gateway_router._agent_router._default or ""
-                )
+                agent = gateway_router._agents.get(gateway_router._default or "")
                 if agent and channel_id in agent._active_sessions:
                     resolved_session_id = agent._active_sessions[channel_id]
             except Exception:  # pragma: no cover — never let lookup break chat
                 pass
-            return 200, headers, json.dumps({
+            return _ok({
                 "response": response.content,
                 "session_id": resolved_session_id,
             })
         except Exception as e:
-            logger.error("Dashboard /api/chat error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/chat", e)
 
     # --- Trace endpoints ---
 
     async def handle_traces(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if not trace_store:
-            return 200, headers, json.dumps([])
+            return _ok([])
         try:
             path = request.get("path", "")
             clean = path.split("?")[0].strip("/")
@@ -265,8 +267,8 @@ def register_dashboard_routes(
                 trace_id = parts[2]
                 trace = trace_store.get_trace(trace_id)
                 if not trace:
-                    return 404, headers, json.dumps({"error": "Trace not found"})
-                return 200, headers, json.dumps(trace)
+                    return _err(404, {"error": "Trace not found"})
+                return _ok(trace)
 
             # List: /api/traces
             limit = 50
@@ -277,25 +279,22 @@ def register_dashboard_routes(
                 limit = int(params.get("limit", "50"))
                 status = params.get("status")
             traces = trace_store.list_traces(limit=limit, status=status)
-            return 200, headers, json.dumps(traces)
+            return _ok(traces)
         except Exception as e:
-            logger.error("Dashboard /api/traces error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/traces", e)
 
     async def handle_trace_stats(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if not trace_store:
-            return 200, headers, json.dumps({})
+            return _ok({})
         try:
-            return 200, headers, json.dumps(trace_store.get_stats())
+            return _ok(trace_store.get_stats())
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_trace_stats", e)
 
     async def handle_usage(request: dict) -> tuple[int, dict[str, str], str]:
         """Token + USD spend rollup for the Settings → Usage & Costs card."""
-        headers = {"Content-Type": "application/json"}
         if not trace_store:
-            return 200, headers, json.dumps({
+            return _ok({
                 "today": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "calls": 0},
                 "week": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "calls": 0},
                 "month": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "calls": 0},
@@ -303,17 +302,15 @@ def register_dashboard_routes(
                 "by_model": {},
             })
         try:
-            return 200, headers, json.dumps(trace_store.get_usage_stats())
+            return _ok(trace_store.get_usage_stats())
         except Exception as e:
-            logger.error("Dashboard /api/usage error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/usage", e)
 
     # --- Task queue endpoints ---
 
     async def handle_tasks(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if not task_queue:
-            return 200, headers, json.dumps([])
+            return _ok([])
         try:
             path = request.get("path", "")
             clean = path.split("?")[0].strip("/")
@@ -324,8 +321,8 @@ def register_dashboard_routes(
                 task_id = parts[2]
                 task = task_queue.get_task(task_id)
                 if not task:
-                    return 404, headers, json.dumps({"error": "Task not found"})
-                return 200, headers, json.dumps(task.to_dict())
+                    return _err(404, {"error": "Task not found"})
+                return _ok(task.to_dict())
 
             # List: /api/tasks
             status_filter = None
@@ -334,73 +331,65 @@ def register_dashboard_routes(
                 params = dict(p.split("=", 1) for p in qs.split("&") if "=" in p)
                 status_filter = params.get("status")
             tasks = task_queue.list_tasks(status=status_filter)
-            return 200, headers, json.dumps([t.to_dict() for t in tasks])
+            return _ok([t.to_dict() for t in tasks])
         except Exception as e:
-            logger.error("Dashboard /api/tasks error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/tasks", e)
 
     async def handle_task_stats(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if not task_queue:
-            return 200, headers, json.dumps({})
+            return _ok({})
         try:
-            return 200, headers, json.dumps(task_queue.get_stats())
+            return _ok(task_queue.get_stats())
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_task_stats", e)
 
     async def handle_task_cancel(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if not task_queue:
-            return 404, headers, json.dumps({"error": "Task queue not available"})
+            return _err(404, {"error": "Task queue not available"})
         try:
             path = request.get("path", "")
             parts = path.strip("/").split("/")
             if len(parts) < 3:
-                return 400, headers, json.dumps({"error": "Missing task ID"})
+                return _err(400, {"error": "Missing task ID"})
             task_id = parts[2]
             if task_queue.cancel_task(task_id):
-                return 200, headers, json.dumps({"cancelled": task_id})
-            return 400, headers, json.dumps({"error": "Task not cancellable"})
+                return _ok({"cancelled": task_id})
+            return _err(400, {"error": "Task not cancellable"})
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_task_cancel", e)
 
     # --- Stale memories endpoint ---
 
     async def handle_stale_memories(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             stale = await memory_store.get_stale_memories(limit=100)
-            return 200, headers, json.dumps(stale)
+            return _ok(stale)
         except Exception as e:
-            logger.error("Dashboard /api/memories/stale error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/memories/stale", e)
 
     async def handle_review_memory(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/memories/review — mark a stale memory as reviewed."""
-        headers = {"Content-Type": "application/json"}
         try:
             data = request.get("json", {})
             memory_id = data.get("memory_id")
             action = data.get("action", "review")  # "review" or "dismiss"
             if not memory_id:
-                return 400, headers, json.dumps({"error": "Missing memory_id"})
+                return _err(400, {"error": "Missing memory_id"})
             if action == "dismiss":
                 await asyncio.to_thread(memory_store._db.soft_delete, int(memory_id))
-                return 200, headers, json.dumps({"dismissed": memory_id})
+                return _ok({"dismissed": memory_id})
             else:
                 await memory_store.mark_reviewed(int(memory_id))
-                return 200, headers, json.dumps({"reviewed": memory_id})
+                return _ok({"reviewed": memory_id})
         except Exception as e:
-            logger.error("Dashboard /api/memories/review error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/memories/review", e)
 
     # --- System Control ---
 
     async def handle_system_restart(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/system/restart — trigger agent reload."""
-        headers = {"Content-Type": "application/json"}
         if not agent_runner:
-            return 404, headers, json.dumps({"error": "Agent runner not available"})
+            return _err(404, {"error": "Agent runner not available"})
         try:
             # We must not block the response, as restarting the runner might
             # close the very server handling this request. We schedule it.
@@ -410,71 +399,65 @@ def register_dashboard_routes(
                 agent_runner.start()
             
             asyncio.get_event_loop().call_later(0.5, _restart)
-            return 200, headers, json.dumps({"status": "restarting"})
+            return _ok({"status": "restarting"})
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_system_restart", e)
 
     # --- Skill manifest endpoint ---
 
     async def handle_manifest(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if not skill_registry:
-            return 200, headers, json.dumps([])
+            return _ok([])
         try:
             manifest = skill_registry.get_permission_manifest()
-            return 200, headers, json.dumps(manifest)
+            return _ok(manifest)
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_manifest", e)
 
     # --- SOUL.md endpoints ---
 
     async def handle_soul_get(request: dict) -> tuple[int, dict[str, str], str]:
         """GET /api/soul — return the SOUL.md content."""
-        headers = {"Content-Type": "application/json"}
         try:
             from autonoma.config import load_config as _load_config
             cfg = _load_config()
             soul_path = Path(cfg.workspace_dir) / "SOUL.md"
             if not soul_path.exists():
-                return 200, headers, json.dumps({"content": "", "exists": False})
+                return _ok({"content": "", "exists": False})
             content = soul_path.read_text(encoding="utf-8")
             stat = soul_path.stat()
-            return 200, headers, json.dumps({
+            return _ok({
                 "content": content,
                 "exists": True,
                 "size_bytes": stat.st_size,
                 "modified": stat.st_mtime,
             })
         except Exception as e:
-            logger.error("Dashboard GET /api/soul error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("GET /api/soul", e)
 
     async def handle_soul_update(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/soul — update the SOUL.md content."""
-        headers = {"Content-Type": "application/json"}
         try:
             from autonoma.config import load_config as _load_config
             cfg = _load_config()
             data = request.get("json", {})
             content = data.get("content")
             if content is None:
-                return 400, headers, json.dumps({"error": "Missing 'content' field"})
+                return _err(400, {"error": "Missing 'content' field"})
             soul_path = Path(cfg.workspace_dir) / "SOUL.md"
             soul_path.parent.mkdir(parents=True, exist_ok=True)
             soul_path.write_text(content, encoding="utf-8")
-            return 200, headers, json.dumps({
+            return _ok({
                 "status": "ok",
                 "size_bytes": len(content.encode("utf-8")),
             })
         except Exception as e:
-            logger.error("Dashboard POST /api/soul error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/soul", e)
 
     # --- Config endpoints ---
 
     async def handle_config_get(request: dict) -> tuple[int, dict[str, str], str]:
         """GET /api/config — return current configuration (secrets masked)."""
-        headers = {"Content-Type": "application/json"}
         try:
             from autonoma.config import load_config as _load_config
             cfg = _load_config()
@@ -505,10 +488,9 @@ def register_dashboard_routes(
                 },
                 "log_level": cfg.log_level,
             }
-            return 200, headers, json.dumps(data)
+            return _ok(data)
         except Exception as e:
-            logger.error("Dashboard GET /api/config error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("GET /api/config", e)
 
     async def handle_config_update(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/config — update configuration fields.
@@ -517,7 +499,6 @@ def register_dashboard_routes(
         to both autonoma.yaml and .env as appropriate. Requires agent restart
         to take effect.
         """
-        headers = {"Content-Type": "application/json"}
         try:
             import os
             from pathlib import Path
@@ -526,7 +507,7 @@ def register_dashboard_routes(
 
             data = request.get("json", {})
             if not data:
-                return 400, headers, json.dumps({"error": "Empty request body"})
+                return _err(400, {"error": "Empty request body"})
 
             yaml_updates: dict = {}
             env_path = Path(".env")
@@ -582,16 +563,14 @@ def register_dashboard_routes(
                 yaml_path = Path("autonoma.yaml")
                 save_yaml_config(yaml_path, yaml_updates)
 
-            return 200, headers, json.dumps({"status": "ok", "updated": list(data.keys()), "restart_required": True})
+            return _ok({"status": "ok", "updated": list(data.keys()), "restart_required": True})
         except Exception as e:
-            logger.error("Dashboard POST /api/config error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/config", e)
 
     # --- Logs endpoint ---
 
     async def handle_logs(request: dict) -> tuple[int, dict[str, str], str]:
         """GET /api/logs?level=&since=&q="""
-        headers = {"Content-Type": "application/json"}
         try:
             from autonoma.logs import log_buffer
             path = request.get("path", "")
@@ -609,16 +588,14 @@ def register_dashboard_routes(
                 q = unquote_plus(params.get("q", "")) or None
                 
             logs = log_buffer.get_logs(level=level, since=since, q=q, limit=500)
-            return 200, headers, json.dumps(logs)
+            return _ok(logs)
         except Exception as e:
-            logger.error("Dashboard GET /api/logs error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("GET /api/logs", e)
 
     # --- Channel endpoints ---
 
     async def handle_channels(request: dict) -> tuple[int, dict[str, str], str]:
         """GET /api/channels — return list of channels and their exact health status."""
-        headers = {"Content-Type": "application/json"}
         try:
             from autonoma.config import load_config as _load_config
             cfg = _load_config()
@@ -649,10 +626,9 @@ def register_dashboard_routes(
                     "last_error": status_block.get("last_error"),
                 })
                 
-            return 200, headers, json.dumps(response_data)
+            return _ok(response_data)
         except Exception as e:
-            logger.error("Dashboard GET /api/channels error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("GET /api/channels", e)
 
     async def handle_channel_reconnect(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/channels/{name}/reconnect — force reconnect an active channel.
@@ -661,22 +637,20 @@ def register_dashboard_routes(
         credential changes that may have been saved since the channel was
         first registered.
         """
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
             parts = path.strip("/").split("/")
             if len(parts) < 4:
-                return 400, headers, json.dumps({"error": "Missing channel name"})
+                return _err(400, {"error": "Missing channel name"})
             channel_name = parts[2]
 
             if channel_name not in gateway_server._channels:
-                return 400, headers, json.dumps({"error": f"Channel '{channel_name}' is not currently running."})
+                return _err(400, {"error": f"Channel '{channel_name}' is not currently running."})
 
             await gateway_server.rebuild_channel(channel_name)
-            return 200, headers, json.dumps({"status": "reconnecting", "channel": channel_name})
+            return _ok({"status": "reconnecting", "channel": channel_name})
         except Exception as e:
-            logger.error("Dashboard POST /api/channels/reconnect error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/channels/reconnect", e)
 
     async def handle_channel_toggle(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/channels/{name}/toggle — enable/disable channel in config.
@@ -687,12 +661,11 @@ def register_dashboard_routes(
         LLM provider) still need a full process restart — channel toggles
         no longer do.
         """
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
             parts = path.strip("/").split("/")
             if len(parts) < 4:
-                return 400, headers, json.dumps({"error": "Missing channel name"})
+                return _err(400, {"error": "Missing channel name"})
             channel_name = parts[2]
 
             data = request.get("json", {})
@@ -721,15 +694,14 @@ def register_dashboard_routes(
                 )
                 restart_required = True
 
-            return 200, headers, json.dumps({
+            return _ok({
                 "status": "ok",
                 "channel": channel_name,
                 "enabled": enabled,
                 "restart_required": restart_required,
             })
         except Exception as e:
-            logger.error("Dashboard POST /api/channels/toggle error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/channels/toggle", e)
 
     async def handle_channel_credentials(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/channels/{name}/credentials — update credentials in .env.
@@ -739,12 +711,11 @@ def register_dashboard_routes(
         flow — saving creds should "just work" without asking the user to
         bounce the process.
         """
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "")
             parts = path.strip("/").split("/")
             if len(parts) < 4:
-                return 400, headers, json.dumps({"error": "Missing channel name"})
+                return _err(400, {"error": "Missing channel name"})
             channel_name = parts[2]
 
             data = request.get("json", {})
@@ -797,7 +768,7 @@ def register_dashboard_routes(
                     os.environ["GMAIL_APP_PASSWORD"] = password
                     set_key(str(env_path), "GMAIL_APP_PASSWORD", password, quote_mode="always")
             else:
-                return 400, headers, json.dumps({"error": f"Credentials update not supported for {channel_name}"})
+                return _err(400, {"error": f"Credentials update not supported for {channel_name}"})
 
             # Apply live — only if the channel is currently registered. If
             # it's disabled in config, saving creds shouldn't silently spin
@@ -815,19 +786,17 @@ def register_dashboard_routes(
                     )
                     restart_required = True
 
-            return 200, headers, json.dumps({
+            return _ok({
                 "status": "ok",
                 "channel": channel_name,
                 "applied_live": applied_live,
                 "restart_required": restart_required,
             })
         except Exception as e:
-            logger.error("Dashboard POST /api/channels/credentials error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/channels/credentials", e)
 
     async def handle_webhooks(request: dict) -> tuple[int, dict[str, str], str]:
         """GET /api/webhooks?channel="""
-        headers = {"Content-Type": "application/json"}
         try:
             from autonoma.gateway.channels._http_server import webhook_buffer
             
@@ -843,23 +812,20 @@ def register_dashboard_routes(
             if channel_filter:
                 results = [item for item in results if channel_filter in item["path"].lower()]
                 
-            return 200, headers, json.dumps(results[::-1]) # reverse chronological
+            return _ok(results[::-1]) # reverse chronological
         except Exception as e:
-            logger.error("Dashboard GET /api/webhooks error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("GET /api/webhooks", e)
 
     async def handle_alerts(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         from autonoma.alerts import alert_manager
-        return 200, headers, json.dumps(alert_manager.list_alerts())
+        return _ok(alert_manager.list_alerts())
 
     async def handle_alert_read(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         from autonoma.alerts import alert_manager
         data = request.get("json", {})
         alert_id = data.get("id")
         alert_manager.mark_read(alert_id)
-        return 200, headers, json.dumps({"status": "ok"})
+        return _ok({"status": "ok"})
 
     async def handle_task_create(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/tasks — submit a one-shot or cron-scheduled task.
@@ -873,9 +839,8 @@ def register_dashboard_routes(
               "cron": "0 8 * * *"            # optional; when set, task recurs
             }
         """
-        headers = {"Content-Type": "application/json"}
         if not task_queue:
-            return 404, headers, json.dumps({"error": "Task queue not found"})
+            return _err(404, {"error": "Task queue not found"})
         try:
             data = request.get("json", {})
             name = data.get("name", "Dashboard Task")
@@ -892,9 +857,9 @@ def register_dashboard_routes(
                 from autonoma.executor.cron import validate as validate_cron
                 err = validate_cron(cron)
                 if err:
-                    return 400, headers, json.dumps(
-                        {"error": f"Invalid cron expression: {err}"}
-                    )
+                    return _err(400, {
+                        "error": f"Invalid cron expression: {err}"
+                    })
 
             from autonoma.executor.task_queue import Priority as _P
             try:
@@ -908,59 +873,54 @@ def register_dashboard_routes(
                 priority=priority_enum,
                 cron=cron,
             )
-            return 200, headers, json.dumps({
+            return _ok({
                 "status": "scheduled" if cron else "enqueued",
                 "id": task_id,
                 "cron": cron,
             })
         except Exception as e:
-            logger.error("Dashboard /api/tasks POST error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/tasks POST", e)
 
     async def handle_memory_consolidate(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             # Consolidation is usually a background process. Trigger it now.
             asyncio.create_task(memory_store.consolidate_memories())
-            return 200, headers, json.dumps({"status": "consolidation_triggered"})
+            return _ok({"status": "consolidation_triggered"})
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_memory_consolidate", e)
 
     async def handle_memory_export(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             all_memories = await asyncio.to_thread(memory_store._db.get_all_active, limit=5000)
-            return 200, headers, json.dumps(all_memories)
+            return _ok(all_memories)
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_memory_export", e)
 
     async def handle_session_delete(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         try:
             path = request.get("path", "").strip("/")
             parts = path.split("/")
             if len(parts) < 3:
-                return 400, headers, json.dumps({"error": "Missing session ID"})
+                return _err(400, {"error": "Missing session ID"})
             session_id = "_".join(parts[2:])
             await session_manager.delete_session(session_id)
-            return 200, headers, json.dumps({"deleted": session_id})
+            return _ok({"deleted": session_id})
         except Exception as e:
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("handle_session_delete", e)
 
     async def handle_webhook_replay(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/webhooks/{id}/replay"""
-        headers = {"Content-Type": "application/json"}
         try:
             from autonoma.gateway.channels._http_server import webhook_buffer
             path = request.get("path", "")
             parts = path.split("/")
             if len(parts) < 5:
-                return 400, headers, json.dumps({"error": "Missing webhook id"})
+                return _err(400, {"error": "Missing webhook id"})
             
             w_id = parts[3]
             target = next((x for x in webhook_buffer if x["id"] == w_id), None)
             if not target:
-                return 404, headers, json.dumps({"error": "Webhook not found"})
+                return _err(404, {"error": "Webhook not found"})
 
             # Bypass socket and invoke handler directly to mimic replay
             handler = http_server._match_route(target["method"], target["path"])
@@ -973,10 +933,9 @@ def register_dashboard_routes(
                     "json": target["json"],
                 }))
             
-            return 200, headers, json.dumps({"status": "Replay triggered"})
+            return _ok({"status": "Replay triggered"})
         except Exception as e:
-            logger.error("Dashboard POST /api/webhooks/replay error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/webhooks/replay", e)
 
     async def handle_whatsapp_qr(request: dict) -> tuple[int, dict[str, str], str]:
         """GET /api/channels/whatsapp/qr — proxy through to the bridge's /qr.
@@ -1013,7 +972,7 @@ def register_dashboard_routes(
                 return status_code, headers, body
         except Exception as e:
             logger.error("Dashboard GET /api/channels/whatsapp/qr error: %s", e)
-            return 502, headers, json.dumps({
+            return _err(502, {
                 "error": "bridge_unreachable",
                 "message": str(e),
                 "hint": "Is the whatsapp-bridge sidecar running?",
@@ -1025,7 +984,6 @@ def register_dashboard_routes(
         If the cache is empty (startup race: endpoint hit before the first
         poll completed) run a single synchronous sweep so callers never see
         an empty payload for a configured proxy."""
-        headers = {"Content-Type": "application/json"}
         try:
             targets = _collect_proxy_targets()
             # Fill cache for any target the poller hasn't visited yet.
@@ -1037,10 +995,9 @@ def register_dashboard_routes(
                 )
             async with _proxy_health_lock:
                 payload = [_proxy_health_cache[ch] for ch in targets if ch in _proxy_health_cache]
-            return 200, headers, json.dumps(payload)
+            return _ok(payload)
         except Exception as e:
-            logger.error("Dashboard GET /api/proxy/health error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("GET /api/proxy/health", e)
 
     async def handle_proxy_health_recheck(request: dict) -> tuple[int, dict[str, str], str]:
         """POST /api/proxy/health/recheck — force an immediate re-probe.
@@ -1048,14 +1005,13 @@ def register_dashboard_routes(
         Optional JSON body: {"channel": "telegram"} to probe just one channel;
         otherwise every configured proxy is re-probed. Returns the fresh
         records so the UI can update without a separate GET roundtrip."""
-        headers = {"Content-Type": "application/json"}
         try:
             body = request.get("json") or {}
             channel_filter = (body.get("channel") or "").strip().lower()
             targets = _collect_proxy_targets()
             if channel_filter:
                 if channel_filter not in targets:
-                    return 404, headers, json.dumps({"error": f"No proxy configured for '{channel_filter}'"})
+                    return _err(404, {"error": f"No proxy configured for '{channel_filter}'"})
                 targets = {channel_filter: targets[channel_filter]}
             results = await asyncio.gather(
                 *(_probe_and_cache(ch, url) for ch, url in targets.items()),
@@ -1070,10 +1026,9 @@ def register_dashboard_routes(
                     clean.append(res)
                 elif ch in _proxy_health_cache:
                     clean.append(_proxy_health_cache[ch])
-            return 200, headers, json.dumps(clean)
+            return _ok(clean)
         except Exception as e:
-            logger.error("Dashboard POST /api/proxy/health/recheck error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/proxy/health/recheck", e)
 
     # ---------------------------------------------------------------- contacts
     # Contacts are optional — the registry can be disabled in config. Each
@@ -1081,41 +1036,36 @@ def register_dashboard_routes(
     # dashboard renders "feature off" instead of a 500.
 
     async def handle_contacts_list(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if contact_store is None:
-            return 503, headers, json.dumps({"error": "contact registry disabled"})
+            return _err(503, {"error": "contact registry disabled"})
         try:
             contacts = await contact_store.list_contacts(limit=500)
             data = [_contact_to_dict(c) for c in contacts]
-            return 200, headers, json.dumps(data)
+            return _ok(data)
         except Exception as e:
-            logger.error("Dashboard /api/contacts error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("/api/contacts", e)
 
     async def handle_contacts_merge(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if contact_store is None:
-            return 503, headers, json.dumps({"error": "contact registry disabled"})
+            return _err(503, {"error": "contact registry disabled"})
         try:
             body = json.loads(request.get("body", "{}") or "{}")
             keep_id = (body.get("keep_id") or "").strip()
             drop_id = (body.get("drop_id") or "").strip()
             if not keep_id or not drop_id:
-                return 400, headers, json.dumps(
-                    {"error": "keep_id and drop_id are required"}
-                )
+                return _err(400, {
+                    "error": "keep_id and drop_id are required"
+                })
             merged = await contact_store.merge_contacts(keep_id, drop_id)
             if merged is None:
-                return 404, headers, json.dumps({"error": "unknown contact id"})
-            return 200, headers, json.dumps(_contact_to_dict(merged))
+                return _err(404, {"error": "unknown contact id"})
+            return _ok(_contact_to_dict(merged))
         except Exception as e:
-            logger.error("Dashboard POST /api/contacts/merge error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/contacts/merge", e)
 
     async def handle_contacts_link(request: dict) -> tuple[int, dict[str, str], str]:
-        headers = {"Content-Type": "application/json"}
         if contact_store is None:
-            return 503, headers, json.dumps({"error": "contact registry disabled"})
+            return _err(503, {"error": "contact registry disabled"})
         try:
             from autonoma.cortex.identity import (
                 CROSS_CHANNEL_KINDS,
@@ -1129,23 +1079,22 @@ def register_dashboard_routes(
             kind = (body.get("kind") or "").strip().lower()
             value = (body.get("value") or "").strip()
             if not canonical_id or kind not in CROSS_CHANNEL_KINDS or not value:
-                return 400, headers, json.dumps(
-                    {"error": "canonical_id, kind (email|phone|handle), value required"}
-                )
+                return _err(400, {
+                    "error": "canonical_id, kind (email|phone|handle), value required"
+                })
             normalized = (
                 normalize_email(value) if kind == "email"
                 else normalize_phone(value) if kind == "phone"
                 else normalize_handle(value)
             )
             if not normalized:
-                return 400, headers, json.dumps({"error": f"invalid {kind} value"})
+                return _err(400, {"error": f"invalid {kind} value"})
             added = await contact_store.add_extracted_identifiers(
                 canonical_id, [Identifier(kind, normalized)]
             )
-            return 200, headers, json.dumps({"added": added, "value": normalized})
+            return _ok({"added": added, "value": normalized})
         except Exception as e:
-            logger.error("Dashboard POST /api/contacts/link error: %s", e)
-            return 500, headers, json.dumps({"error": str(e)})
+            return _fail("POST /api/contacts/link", e)
 
     # Kick off the background proxy health poller. Wrapped in a guard so
     # re-registering routes (e.g. in tests) doesn't spawn duplicate pollers.

@@ -13,6 +13,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from rich.console import Console
 
@@ -28,6 +29,7 @@ _ENV_PATH = Path(_HOME) / ".env"
 _PLACEHOLDER_ENV = 'AUTONOMA_LLM_PROVIDER="anthropic"\nANTHROPIC_API_KEY="placeholder"\n'
 _ENV_PATH.write_text(_PLACEHOLDER_ENV, encoding="utf-8")
 
+from autonoma.models.catalog import PROVIDER_SPECS  # noqa: E402
 from autonoma.splash import VARIANTS, pick_variant  # noqa: E402
 from autonoma.tui import (  # noqa: E402
     CHANNEL_ORDER,
@@ -41,6 +43,13 @@ from autonoma.tui import (  # noqa: E402
     Workspace,
     _styled_log_line,
 )
+
+# Every provider key plus the generic override — the set WizardTest must hold
+# clear for a deliberately blank workspace to read as blank.
+_PROVIDER_KEYS = list(dict.fromkeys(
+    [spec.env_key for spec in PROVIDER_SPECS]
+    + ["AUTONOMA_LLM_API_KEY", "AUTONOMA_LLM_PROVIDER", "AUTONOMA_LLM_MODEL"]
+))
 
 
 def _run(coro):
@@ -212,24 +221,29 @@ class ChannelsScreenTest(unittest.TestCase):
 
 class WizardTest(unittest.TestCase):
     def setUp(self) -> None:
-        # Blank the workspace so the app treats this as a first run.
+        # `config.load_config()` calls a bare `load_dotenv()`, which pulls the
+        # *project's* .env — whatever the developer configured on this machine
+        # — into os.environ. That would make a deliberately blank workspace
+        # look already set up. Silence that call for the duration of the test,
+        # and scrub anything an earlier test already let leak in.
+        self._patcher = mock.patch("autonoma.config.load_dotenv", return_value=False)
+        self._patcher.start()
+        self._saved_env = {
+            key: os.environ.pop(key) for key in _PROVIDER_KEYS if key in os.environ
+        }
         _ENV_PATH.write_text("", encoding="utf-8")
-        for key in (
-            "ANTHROPIC_API_KEY",
-            "OPENROUTER_API_KEY",
-            "AUTONOMA_LLM_API_KEY",
-            "AUTONOMA_LLM_PROVIDER",
-            "AUTONOMA_LLM_MODEL",
-        ):
-            os.environ.pop(key, None)
 
     def tearDown(self) -> None:
-        # Restore the placeholder so later tests land straight on MainScreen.
+        self._patcher.stop()
+        # Put the machine's environment back exactly as we found it…
+        for key in _PROVIDER_KEYS:
+            os.environ.pop(key, None)
+        os.environ.update(self._saved_env)
+        # …and leave the temp workspace configured, so later tests land on
+        # MainScreen rather than the first-run wizard.
         _ENV_PATH.write_text(_PLACEHOLDER_ENV, encoding="utf-8")
-        os.environ.pop("OPENROUTER_API_KEY", None)
-        os.environ.pop("AUTONOMA_LLM_MODEL", None)
-        os.environ["AUTONOMA_LLM_PROVIDER"] = "anthropic"
-        os.environ["ANTHROPIC_API_KEY"] = "placeholder"
+        os.environ.setdefault("AUTONOMA_LLM_PROVIDER", "anthropic")
+        os.environ.setdefault("ANTHROPIC_API_KEY", "placeholder")
 
     def test_first_run_is_detected_without_a_key(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -16,8 +16,8 @@ Every modal is an awaited result, so multi-step actions read top to bottom::
         ...
 
 Blocking work (agent stop/start, HTTP calls, DB reads) runs behind a
-``TaskDialog`` in a thread; long async waits (OAuth callback, WhatsApp QR)
-run behind a cancellable ``WaitDialog``. The UI never freezes.
+``RunDialog`` in a thread; long async waits (OAuth callback, WhatsApp QR)
+are awaited behind the same dialog. The UI never freezes.
 
 ``AutonomaTUI().run()`` is still the public entry point used by
 ``autonoma.main.cli_entry``.
@@ -198,21 +198,8 @@ def _probe_tcp(url: str, timeout: float = 1.0) -> bool:
         return False
 
 
-def _http_get(url: str) -> tuple[bool, Any]:
-    try:
-        with urllib.request.urlopen(url, timeout=5.0) as resp:
-            return True, json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        try:
-            return False, json.loads(exc.read().decode("utf-8")).get("error", str(exc))
-        except Exception:
-            return False, str(exc)
-    except Exception as exc:
-        return False, str(exc)
-
-
-def _http_post(url: str) -> tuple[bool, Any]:
-    req = urllib.request.Request(url, method="POST")
+def _http(url: str, method: str = "GET") -> tuple[bool, Any]:
+    req = urllib.request.Request(url, method=method)
     try:
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             return True, json.loads(resp.read().decode("utf-8"))
@@ -544,60 +531,41 @@ class ChoiceDialog(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class TaskDialog(ModalScreen[Any]):
-    """Run a blocking callable in a thread, then dismiss with its result."""
+class RunDialog(ModalScreen[Any]):
+    """Run work to completion, then dismiss with its result.
 
-    def __init__(self, message: str, fn: Callable[[], Any]) -> None:
-        super().__init__(classes="dialog")
-        self._message = message
-        self._fn = fn
-
-    def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static(self._message, id="task-message"),
-            Static("[dim]working…[/]"),
-            classes="dbox",
-        )
-
-    def on_mount(self) -> None:
-        self._run()
-
-    @work(exclusive=True, group="task")
-    async def _run(self) -> None:
-        try:
-            result = await asyncio.to_thread(self._fn)
-        except Exception as exc:  # noqa: BLE001 - surfaced to the caller
-            result = exc
-        if not self.is_mounted:
-            return
-        self.dismiss(result)
-
-
-class WaitDialog(ModalScreen[Any]):
-    """Await a coroutine to completion. Escape cancels it."""
+    A plain callable runs in a thread (Escape does nothing); a coroutine is
+    awaited and Escape cancels it, dismissing None.
+    """
 
     BINDINGS = [Binding("escape", "cancel", show=False)]
 
-    def __init__(self, message: str, coro: Coroutine[Any, Any, Any]) -> None:
+    def __init__(
+        self, message: str, work: Callable[[], Any] | Coroutine[Any, Any, Any]
+    ) -> None:
         super().__init__(classes="dialog")
         self._message = message
-        self._coro = coro
+        self._work = work
+        self._cancellable = asyncio.iscoroutine(work)
 
     def compose(self) -> ComposeResult:
+        hint = "escape to cancel" if self._cancellable else "working…"
         yield Vertical(
-            Static(self._message, id="wait-message"),
-            Static("[dim]escape to cancel[/]"),
+            Static(self._message, id="run-message"),
+            Static(f"[dim]{hint}[/]"),
             classes="dbox",
         )
 
     def on_mount(self) -> None:
         self._run()
 
-    @work(exclusive=True, group="wait")
+    @work(exclusive=True, group="dialog")
     async def _run(self) -> None:
-        result: Any = None
         try:
-            result = await self._coro
+            if self._cancellable:
+                result = await cast(Coroutine[Any, Any, Any], self._work)
+            else:
+                result = await asyncio.to_thread(cast(Callable[[], Any], self._work))
         except Exception as exc:  # noqa: BLE001 - surfaced to the caller
             result = exc
         if not self.is_mounted:
@@ -605,7 +573,8 @@ class WaitDialog(ModalScreen[Any]):
         self.dismiss(result)
 
     def action_cancel(self) -> None:
-        self.dismiss(None)
+        if self._cancellable:
+            self.dismiss(None)
 
 
 class CredentialDialog(ModalScreen[dict[str, str] | None]):
@@ -748,14 +717,13 @@ class BaseScreen(Screen):
             wait_for_dismiss=True,
         )
 
-    async def task(self, message: str, fn: Callable[[], Any]) -> Any:
+    async def task(
+        self,
+        message: str,
+        work: Callable[[], Any] | Coroutine[Any, Any, Any],
+    ) -> Any:
         return await cast(App, self.app).push_screen(
-            TaskDialog(message, fn), wait_for_dismiss=True
-        )
-
-    async def wait_for(self, message: str, coro: Coroutine[Any, Any, Any]) -> Any:
-        return await cast(App, self.app).push_screen(
-            WaitDialog(message, coro), wait_for_dismiss=True
+            RunDialog(message, work), wait_for_dismiss=True
         )
 
     async def credentials(
@@ -764,10 +732,6 @@ class BaseScreen(Screen):
         return await cast(App, self.app).push_screen(
             CredentialDialog(name, variables), wait_for_dismiss=True
         )
-
-    async def say(self, title: str, body: str) -> None:
-        await self.ask(title, body)
-
 
 class BackScreen(BaseScreen):
     """A screen that leaves on Escape."""
@@ -842,11 +806,11 @@ class MainScreen(BaseScreen):
         url = self.tui.base_url()
         result = await self.task(f"Opening {url}…", lambda: _open_browser(url))
         if isinstance(result, Exception):
-            await self.say("Dashboard", f"[red]Could not open the browser:[/] {result}")
+            await self.ask("Dashboard", f"[red]Could not open the browser:[/] {result}")
             return
         reachable, opened = result
         if not opened:
-            await self.say("Dashboard", "[red]Could not launch the browser.[/]")
+            await self.ask("Dashboard", "[red]Could not launch the browser.[/]")
         elif not reachable:
             await self.ask(
                 "Dashboard",
@@ -858,9 +822,9 @@ class MainScreen(BaseScreen):
     async def _restart_flow(self) -> None:
         result = await self.task("Restarting agent…", self.tui.restart_agent)
         if isinstance(result, Exception):
-            await self.say("Restart failed", f"[red]{result}[/]")
+            await self.ask("Restart failed", f"[red]{result}[/]")
             return
-        await self.say("Restarted", "[green]✓ Agent restarted.[/]")
+        await self.ask("Restarted", "[green]✓ Agent restarted.[/]")
         self._refresh_status()
 
 
@@ -1330,21 +1294,21 @@ class ChannelsScreen(BackScreen):
                 lambda: _spawn_bridge(self.tui.ws.root / "whatsapp-bridge"),
             )
             if isinstance(spawned, Exception):
-                await self.say(
+                await self.ask(
                     "WhatsApp bridge",
                     f"[red]Could not start the bridge:[/] {spawned}",
                 )
                 return
             up = await asyncio.to_thread(self._wait_for_bridge, bridge_url, 15.0)
             if not up:
-                await self.say(
+                await self.ask(
                     "WhatsApp bridge",
                     f"[yellow]The bridge did not come online within 15s.[/]\n\n"
                     f"[dim]Log: {self.tui.ws.root / 'whatsapp-bridge' / 'bridge.log'}[/]",
                 )
                 return
 
-        result = await self.wait_for(
+        result = await self.task(
             "Waiting for a fresh QR code (puppeteer takes a few seconds)…",
             _poll_qr(bridge_url),
         )
@@ -1352,7 +1316,7 @@ class ChannelsScreen(BackScreen):
 
     async def _show_qr_result(self, result: Any) -> None:
         if isinstance(result, Exception):
-            await self.say("WhatsApp QR", f"[red]{result}[/]")
+            await self.ask("WhatsApp QR", f"[red]{result}[/]")
             return
         if isinstance(result, dict) and result.get("qr"):
             art = _qr_ascii(result["qr"])
@@ -1365,7 +1329,7 @@ class ChannelsScreen(BackScreen):
             await self._push_qr(art, note)
             return
         if isinstance(result, dict) and result.get("ready"):
-            await self.say(
+            await self.ask(
                 "WhatsApp",
                 "[green]WhatsApp session is already authenticated — no QR "
                 "needed.[/]\n[dim]Use Reconnect to wipe the session first if you "
@@ -1373,7 +1337,7 @@ class ChannelsScreen(BackScreen):
             )
             return
         detail = result.get("error") if isinstance(result, dict) else str(result)
-        await self.say(
+        await self.ask(
             "WhatsApp QR",
             f"[yellow]No QR arrived within 30s.[/]\n\n[dim]{detail}[/]\n\n"
             "This usually means puppeteer is still booting or the bridge is "
@@ -1420,7 +1384,7 @@ class ConnectorsScreen(BackScreen):
     async def _load_flow(self) -> None:
         base = self.tui.base_url()
         ok, entries = await self.task(
-            "Loading connectors…", lambda: _http_get(f"{base}/api/connectors")
+            "Loading connectors…", lambda: _http(f"{base}/api/connectors")
         )
         if not self.is_mounted:
             return
@@ -1478,7 +1442,7 @@ class ConnectorsScreen(BackScreen):
                 return
             ok, payload = await self.task(
                 f"Signing out of {display}…",
-                lambda: _http_post(f"{base}/api/connectors/{name}/disconnect"),
+                lambda: _http(f"{base}/api/connectors/{name}/disconnect", "POST"),
             )
             if ok:
                 self._note(f"[green]Signed out of {display}.[/]")
@@ -1489,7 +1453,7 @@ class ConnectorsScreen(BackScreen):
 
         ok, payload = await self.task(
             f"Connecting to {display}…",
-            lambda: _http_post(f"{base}/api/connectors/{name}/connect"),
+            lambda: _http(f"{base}/api/connectors/{name}/connect", "POST"),
         )
         if not ok:
             self._note(f"[red]Connect failed:[/] {payload}")
@@ -1498,7 +1462,7 @@ class ConnectorsScreen(BackScreen):
         if not auth_url:
             self._note("[red]No auth URL returned.[/]")
             return
-        await self.say(
+        await self.ask(
             display,
             f"Authorize {display} in your browser.\n\n[cyan]{auth_url}[/]",
         )
@@ -1506,7 +1470,7 @@ class ConnectorsScreen(BackScreen):
             webbrowser.open(auth_url)
         except Exception:  # noqa: BLE001 - browser is best-effort
             pass
-        result = await self.wait_for(
+        result = await self.task(
             "Waiting for the OAuth callback (up to 3 minutes)…",
             _wait_for_connection(base, name, timeout=180.0),
         )
@@ -1711,7 +1675,7 @@ class SetupWizardScreen(BaseScreen):
         )
         ws.invalidate()
 
-        await self.say(
+        await self.ask(
             "Setup complete",
             f"Provider: [bold]{self.provider}[/]\nModel: [bold]{self.model}[/]",
         )
@@ -1828,7 +1792,7 @@ async def _wait_for_connection(base: str, name: str, timeout: float) -> dict | N
     """Poll the connectors API until the OAuth callback lands."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        ok, data = await asyncio.to_thread(_http_get, f"{base}/api/connectors")
+        ok, data = await asyncio.to_thread(_http, f"{base}/api/connectors")
         if ok and isinstance(data, list):
             for entry in data:
                 if entry["manifest"]["name"] != name:
@@ -2123,13 +2087,13 @@ class AutonomaTUI(App[None]):
         was_running = self.runner is not None and self.runner.is_running()
         if was_running:
             await cast(App, self).push_screen(
-                TaskDialog("Stopping agent to safely change configuration…", self.stop_agent),
+                RunDialog("Stopping agent to safely change configuration…", self.stop_agent),
                 wait_for_dismiss=True,
             )
         await cast(App, self).push_screen(factory(), wait_for_dismiss=True)
         if was_running:
             await cast(App, self).push_screen(
-                TaskDialog("Restarting agent with new config…", self.restart_agent),
+                RunDialog("Restarting agent with new config…", self.restart_agent),
                 wait_for_dismiss=True,
             )
 

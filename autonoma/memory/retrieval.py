@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from autonoma.memory.database import MemoryDatabase
+from autonoma.memory.database import MemoryDatabase, row_to_entry
 from autonoma.memory.embeddings import EmbeddingProvider
 from autonoma.schema import MemoryEntry
 
@@ -35,7 +35,7 @@ class MemoryRetriever:
         if query.strip():
             candidates = self._db.search(query, limit=self._max_results * 2)
             for row in candidates:
-                entry = _row_to_entry(row)
+                entry = row_to_entry(row)
                 entry.relevance_score = row.get("bm25_score", 0.0)
                 score = self._combined_score(
                     bm25_score=entry.relevance_score,
@@ -52,7 +52,7 @@ class MemoryRetriever:
         for row in recent:
             if row["id"] in seen_ids:
                 continue
-            entry = _row_to_entry(row)
+            entry = row_to_entry(row)
             score = self._combined_score(
                 bm25_score=0.0,
                 cosine_score=0.0,
@@ -73,7 +73,7 @@ class MemoryRetriever:
 
         if not query.strip():
             entries = await asyncio.to_thread(self._db.get_recent, 10, True)
-            return [_row_to_entry(r) for r in entries]
+            return [row_to_entry(r) for r in entries]
 
         # 1. BM25 search
         bm25_results = await asyncio.to_thread(
@@ -82,7 +82,7 @@ class MemoryRetriever:
         bm25_map: dict[int, float] = {}
         for row in bm25_results:
             bm25_map[row["id"]] = row.get("bm25_score", 0.0)
-            entry = _row_to_entry(row)
+            entry = row_to_entry(row)
             seen_ids.add(entry.id)
 
         # 2. Vector search (if embedder available)
@@ -111,7 +111,7 @@ class MemoryRetriever:
             row = id_to_row.get(mid)
             if not row:
                 continue
-            entry = _row_to_entry(row)
+            entry = row_to_entry(row)
             score = self._combined_score(
                 bm25_score=bm25_map.get(mid, 0.0),
                 cosine_score=vector_map.get(mid, 0.0),
@@ -256,18 +256,3 @@ def _recency_boost(accessed_at: str) -> float:
     if age < timedelta(weeks=1):
         return 1.0
     return 0.8
-
-
-def _row_to_entry(row: dict) -> MemoryEntry:
-    """Convert a database row dict to a MemoryEntry."""
-    return MemoryEntry(
-        id=row["id"],
-        content=row["content"],
-        type=row["type"],
-        source=row.get("source", ""),
-        importance=row["importance"],
-        created_at=row["created_at"],
-        accessed_at=row["accessed_at"],
-        access_count=row.get("access_count", 0),
-        active=bool(row.get("active", 1)),
-    )

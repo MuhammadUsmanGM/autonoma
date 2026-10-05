@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 
-from autonoma.memory.database import MemoryDatabase
+from autonoma.memory.database import MemoryDatabase, row_to_entry
 from autonoma.memory.embeddings import EmbeddingProvider, create_embedding_provider
 from autonoma.memory.retrieval import MemoryRetriever
 from autonoma.schema import MemoryEntry, Message
@@ -164,7 +164,7 @@ class MemoryStore:
     async def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Public search interface."""
         results = await asyncio.to_thread(self._db.search, query, limit=limit)
-        return [_row_to_entry(r) for r in results]
+        return [row_to_entry(r) for r in results]
 
     async def get_stats(self) -> dict:
         """Return memory database statistics."""
@@ -264,18 +264,3 @@ class MemoryStore:
     @staticmethod
     def _write_file(path: Path, content: str) -> None:
         path.write_text(content, encoding="utf-8")
-
-
-def _row_to_entry(row: dict) -> MemoryEntry:
-    """Convert a database row dict to a MemoryEntry."""
-    return MemoryEntry(
-        id=row["id"],
-        content=row["content"],
-        type=row["type"],
-        source=row.get("source", ""),
-        importance=row["importance"],
-        created_at=row["created_at"],
-        accessed_at=row["accessed_at"],
-        access_count=row.get("access_count", 0),
-        active=bool(row.get("active", 1)),
-    )

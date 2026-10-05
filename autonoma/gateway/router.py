@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from autonoma.cortex.router import AgentRouter
+from autonoma.cortex.agent import Agent
 from autonoma.cortex.triage import Triage, TriageDecision
 from autonoma.schema import AgentResponse, Message
 
@@ -19,9 +19,22 @@ logger = logging.getLogger(__name__)
 class GatewayRouter:
     """Routes incoming channel messages to the agent layer."""
 
-    def __init__(self, agent_router: AgentRouter, triage: Triage | None = None):
-        self._agent_router = agent_router
+    def __init__(self, triage: Triage | None = None):
+        self._agents: dict[str, Agent] = {}
+        self._default: str | None = None
         self._triage = triage
+
+    def register(self, name: str, agent: Agent, *, default: bool = False) -> None:
+        """Add an agent; ``default`` (or the first registered) answers."""
+        self._agents[name] = agent
+        if default or self._default is None:
+            self._default = name
+
+    async def route(self, message: Message) -> AgentResponse:
+        """Dispatch to the default agent (single-agent pass-through today)."""
+        if not self._default or self._default not in self._agents:
+            return AgentResponse(content="No agent available to handle this message.")
+        return await self._agents[self._default].handle_message(message)
 
     async def handle_message(self, message: Message) -> AgentResponse:
         """Triage the message, then route to the agent if it merits a reply."""
@@ -30,11 +43,11 @@ class GatewayRouter:
             if decision.decision != "reply":
                 return self._build_filtered_response(decision)
 
-            response = await self._agent_router.route(message)
+            response = await self.route(message)
             response.metadata.setdefault("triage", decision.to_dict())
             return response
 
-        return await self._agent_router.route(message)
+        return await self.route(message)
 
     @staticmethod
     def _build_filtered_response(decision: TriageDecision) -> AgentResponse:

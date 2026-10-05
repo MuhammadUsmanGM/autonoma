@@ -118,25 +118,38 @@ def setup_log_buffer():
     logging.getLogger().addHandler(log_buffer)
 
 
-def configure_root_logger(level: int, log_format: str = "text") -> None:
-    """Configure the root logger's stream handler.
+def configure_root_logger(
+    level: int, log_format: str = "text", *, console: bool = True
+) -> None:
+    """Configure the root logger.
 
-    Default is the existing human-readable format. Pass ``log_format="json"``
-    to switch stdout to one JSON document per line — useful for container
-    deployments that ship logs to Loki / Elastic / Datadog / etc.
+    Always sets the level and strips any stale stream handler. When
+    ``console`` is true (default) a stderr stream handler is attached —
+    text format, or one JSON document per line with ``log_format="json"``
+    for container deployments that ship logs to Loki / Elastic / Datadog.
 
-    This is idempotent: repeated calls reconfigure the stream handler in place
-    rather than stacking new ones.
+    With ``console=False`` no stream handler is attached at all: records
+    go only to the ring buffers (TUI log viewer, dashboard ``/api/logs``)
+    and the log file. The TUI passes this so the terminal stays clean.
+
+    This is idempotent: repeated calls reconfigure the stream handler in
+    place rather than stacking new ones.
     """
     root = logging.getLogger()
     root.setLevel(level)
 
-    # Drop any prior stream handler we attached so level/format changes apply
-    # cleanly across reload (e.g. tests, TUI restart). Ring buffer handler is
-    # left alone — it's attached separately by setup_log_buffer().
+    # Drop any prior stream (stderr/stdout) handler we attached so
+    # level/format changes apply cleanly across reload (e.g. tests, TUI
+    # restart). Ring-buffer and file handlers are left alone — they are
+    # attached separately by setup_log_buffer() / install_logging().
     for h in list(root.handlers):
-        if isinstance(h, logging.StreamHandler) and not isinstance(h, RingLogHandler):
+        if isinstance(h, logging.StreamHandler) and not isinstance(
+            h, (logging.FileHandler, RingLogHandler)
+        ):
             root.removeHandler(h)
+
+    if not console:
+        return
 
     handler = logging.StreamHandler()
     if log_format.lower() == "json":

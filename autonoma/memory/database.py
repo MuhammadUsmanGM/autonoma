@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import struct
 import logging
 from datetime import datetime
 from pathlib import Path
+
+from autonoma.schema import MemoryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,6 @@ class MemoryDatabase:
         expires_at: str | None = None,
     ) -> None:
         """Set or update expiry for a memory."""
-        now = datetime.utcnow().isoformat()
         self._conn.execute(
             """INSERT INTO memory_expiry (memory_id, expires_at, review_status)
                VALUES (?, ?, 'active')
@@ -359,7 +359,6 @@ class MemoryDatabase:
 
     def expire_old_memories(self) -> int:
         """Archive memories that have passed their expiry date. Returns count."""
-        now = datetime.utcnow().isoformat()
         expired = self.get_expired_memories()
         count = 0
         for mem in expired:
@@ -518,6 +517,24 @@ class MemoryDatabase:
     def close(self) -> None:
         """Close the database connection."""
         self._conn.close()
+
+
+def row_to_entry(row: dict) -> MemoryEntry:
+    """Convert a database row dict to a MemoryEntry.
+
+    Shared by the store and the retriever — both read the same rows.
+    """
+    return MemoryEntry(
+        id=row["id"],
+        content=row["content"],
+        type=row["type"],
+        source=row.get("source", ""),
+        importance=row["importance"],
+        created_at=row["created_at"],
+        accessed_at=row["accessed_at"],
+        access_count=row.get("access_count", 0),
+        active=bool(row.get("active", 1)),
+    )
 
 
 def _floats_to_blob(floats: list[float]) -> bytes:

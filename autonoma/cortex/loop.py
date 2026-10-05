@@ -122,74 +122,15 @@ class AgentLoop:
             self._observe(trace, "route", {"user_id": message.user_id})
 
             # Stage 2.5: RESOLVE CONTACT + STATE (relationship + conversation state)
-            contact = None
-            state = None
-            if self._contacts is not None:
-                contact = await self._contacts.upsert(message)
-                # Cross-channel identity hints: pull emails / phones out of
-                # the message body and attach them to this contact. Same
-                # email later spotted in a Telegram message → that Telegram
-                # conversation auto-merges into this contact.
-                extracted = extract_identifiers_for_channel(
-                    message.channel, message.content
-                )
-                added = 0
-                if extracted:
-                    added = await self._contacts.add_extracted_identifiers(
-                        contact.canonical_id, extracted
-                    )
-                enriched = False
-                if self._contact_enricher is not None and self._contact_enricher.is_active():
-                    try:
-                        enriched_contact = await self._contact_enricher.enrich(contact)
-                        if enriched_contact is not None and enriched_contact is not contact:
-                            contact = enriched_contact
-                            enriched = True
-                    except Exception as exc:  # pragma: no cover — best-effort
-                        logger.debug("Contact enrichment failed: %s", exc)
-                self._observe(trace, "resolve_contact", {
-                    "canonical_id": contact.canonical_id,
-                    "tier": contact.tier,
-                    "message_count": contact.message_count,
-                    "extracted_identifiers": len(extracted),
-                    "extracted_added": added,
-                    "enriched": enriched,
-                })
-            if self._state_store is not None and contact is not None:
-                state = await self._state_store.record_inbound(
-                    contact.canonical_id, message.id
-                )
-                self._observe(trace, "update_state", {
-                    "state": state.state,
-                    "canonical_id": contact.canonical_id,
-                })
+            contact, state = await self._resolve_contact_state(message, trace)
 
             # Stage 3: ASSEMBLE CONTEXT
-            user_entry = SessionEntry(
-                role="user",
-                content=message.content,
-                channel=message.channel,
-                user_id=message.user_id,
-            )
-            await self._sessions.append(session_id, user_entry)
-
-            history = await self._sessions.load_history(session_id)
-            system_prompt, messages = await self._context.assemble(
-                history, contact=contact, state=state,
-            )
-            self._observe(
-                trace,
-                "assemble_context",
-                {"history_count": len(history), "system_prompt_len": len(system_prompt)},
+            system_prompt, messages = await self._assemble_context(
+                session_id, message, contact, state, trace
             )
 
             # Stage 6: LOAD SKILLS (get tool definitions for LLM)
-            tool_defs = None
-            if self._skill_registry:
-                tool_defs = self._skill_registry.get_tool_definitions()
-                self._observe(trace, "load_skills", {"tool_count": len(tool_defs)})
-            else:
-                self._observe(trace, "load_skills", {"skipped": True})
+            tool_defs = self._load_skills(trace)
 
             # Stage 4: INFER
             response = await self._infer(system_prompt, messages, tools=tool_defs)
@@ -198,50 +139,15 @@ class AgentLoop:
             )
 
             # Stage 5: REACT LOOP
-            iteration = 0
-            react_messages = list(messages)  # Working copy
-
-            while response.has_tool_calls and iteration < MAX_REACT_ITERATIONS:
-                iteration += 1
-                logger.info("ReAct iteration %d — %d tool calls", iteration, len(response.tool_calls))
-
-                # Build assistant message with the full response content
-                assistant_content = self._build_assistant_content(response)
-                react_messages.append(LLMMessage(role="assistant", content=assistant_content))
-
-                # Execute each tool call
-                tool_results: list[ToolResult] = []
-                for tc in response.tool_calls:
-                    if self._tool_runner:
-                        result = await self._tool_runner.execute(tc, session_id=session_id)
-                    else:
-                        result = ToolResult(
-                            tool_use_id=tc.id,
-                            content="Error: No tool runner configured.",
-                            is_error=True,
-                        )
-                    tool_results.append(result)
-                    tool_trace.append({
-                        "iteration": iteration,
-                        "tool": tc.name,
-                        "input": tc.input,
-                        "result": result.content[:200],
-                        "is_error": result.is_error,
-                    })
-                    logger.info(
-                        "Tool %s → %s",
-                        tc.name,
-                        "error" if result.is_error else "ok",
-                    )
-
-                # Build tool result message and feed back to LLM
-                result_content = self._build_tool_results(tool_results)
-                react_messages.append(LLMMessage(role="user", content=result_content))
-
-                # Re-invoke LLM
-                response = await self._infer(system_prompt, react_messages, tools=tool_defs)
-
-            self._observe(trace, "react_loop", {"iterations": iteration + 1})
+            response = await self._react_loop(
+                system_prompt,
+                messages,
+                response,
+                tools=tool_defs,
+                session_id=session_id,
+                tool_trace=tool_trace,
+                trace=trace,
+            )
 
             final_text = response.text
 
@@ -375,6 +281,148 @@ class AgentLoop:
                 break
 
         return message
+
+    async def _resolve_contact_state(
+        self, message: Message, trace: dict
+    ) -> tuple[Any, Any]:
+        """Stage 2.5: Resolve the sender's contact record + conversation state."""
+        contact = None
+        state = None
+        if self._contacts is not None:
+            contact = await self._contacts.upsert(message)
+            # Cross-channel identity hints: pull emails / phones out of
+            # the message body and attach them to this contact. Same
+            # email later spotted in a Telegram message → that Telegram
+            # conversation auto-merges into this contact.
+            extracted = extract_identifiers_for_channel(
+                message.channel, message.content
+            )
+            added = 0
+            if extracted:
+                added = await self._contacts.add_extracted_identifiers(
+                    contact.canonical_id, extracted
+                )
+            enriched = False
+            if self._contact_enricher is not None and self._contact_enricher.is_active():
+                try:
+                    enriched_contact = await self._contact_enricher.enrich(contact)
+                    if enriched_contact is not None and enriched_contact is not contact:
+                        contact = enriched_contact
+                        enriched = True
+                except Exception as exc:  # pragma: no cover — best-effort
+                    logger.debug("Contact enrichment failed: %s", exc)
+            self._observe(trace, "resolve_contact", {
+                "canonical_id": contact.canonical_id,
+                "tier": contact.tier,
+                "message_count": contact.message_count,
+                "extracted_identifiers": len(extracted),
+                "extracted_added": added,
+                "enriched": enriched,
+            })
+        if self._state_store is not None and contact is not None:
+            state = await self._state_store.record_inbound(
+                contact.canonical_id, message.id
+            )
+            self._observe(trace, "update_state", {
+                "state": state.state,
+                "canonical_id": contact.canonical_id,
+            })
+        return contact, state
+
+    async def _assemble_context(
+        self,
+        session_id: str,
+        message: Message,
+        contact: Any,
+        state: Any,
+        trace: dict,
+    ) -> tuple[str, list[LLMMessage]]:
+        """Stage 3: Append the user turn, then assemble prompt + messages."""
+        user_entry = SessionEntry(
+            role="user",
+            content=message.content,
+            channel=message.channel,
+            user_id=message.user_id,
+        )
+        await self._sessions.append(session_id, user_entry)
+
+        history = await self._sessions.load_history(session_id)
+        system_prompt, messages = await self._context.assemble(
+            history, contact=contact, state=state,
+        )
+        self._observe(
+            trace,
+            "assemble_context",
+            {"history_count": len(history), "system_prompt_len": len(system_prompt)},
+        )
+        return system_prompt, messages
+
+    def _load_skills(self, trace: dict) -> list[dict] | None:
+        """Stage 6: Tool definitions for the LLM, if the skill registry is on."""
+        if self._skill_registry:
+            tool_defs = self._skill_registry.get_tool_definitions()
+            self._observe(trace, "load_skills", {"tool_count": len(tool_defs)})
+            return tool_defs
+        self._observe(trace, "load_skills", {"skipped": True})
+        return None
+
+    async def _react_loop(
+        self,
+        system_prompt: str,
+        messages: list[LLMMessage],
+        response: LLMResponse,
+        *,
+        tools: list[dict] | None,
+        session_id: str,
+        tool_trace: list[dict],
+        trace: dict,
+    ) -> LLMResponse:
+        """Stage 5: Execute tool calls and re-prompt until the LLM stops."""
+        iteration = 0
+        react_messages = list(messages)  # Working copy
+
+        while response.has_tool_calls and iteration < MAX_REACT_ITERATIONS:
+            iteration += 1
+            logger.info("ReAct iteration %d — %d tool calls", iteration, len(response.tool_calls))
+
+            # Build assistant message with the full response content
+            assistant_content = self._build_assistant_content(response)
+            react_messages.append(LLMMessage(role="assistant", content=assistant_content))
+
+            # Execute each tool call
+            tool_results: list[ToolResult] = []
+            for tc in response.tool_calls:
+                if self._tool_runner:
+                    result = await self._tool_runner.execute(tc, session_id=session_id)
+                else:
+                    result = ToolResult(
+                        tool_use_id=tc.id,
+                        content="Error: No tool runner configured.",
+                        is_error=True,
+                    )
+                tool_results.append(result)
+                tool_trace.append({
+                    "iteration": iteration,
+                    "tool": tc.name,
+                    "input": tc.input,
+                    "result": result.content[:200],
+                    "is_error": result.is_error,
+                })
+                logger.info(
+                    "Tool %s → %s",
+                    tc.name,
+                    "error" if result.is_error else "ok",
+                )
+
+            # Build tool result message and feed back to LLM
+            result_content = self._build_tool_results(tool_results)
+            react_messages.append(LLMMessage(role="user", content=result_content))
+
+            # Re-invoke LLM
+            response = await self._infer(system_prompt, react_messages, tools=tools)
+
+        self._observe(trace, "react_loop", {"iterations": iteration + 1})
+        return response
 
     async def _infer(
         self,

@@ -7,6 +7,7 @@ import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from autonoma.connectors._util import to_thread as _to_thread
 from autonoma.connectors.oauth import http_json
 from autonoma.executor.tools.base import BaseTool, ToolPermission
 
@@ -46,10 +47,6 @@ def _write_perm() -> ToolPermission:
         secrets=True,
         description="Creates Google Meet links via Calendar on behalf of a connected account.",
     )
-
-
-def _to_thread(fn, *args, **kwargs):
-    return asyncio.get_event_loop().run_in_executor(None, lambda: fn(*args, **kwargs))
 
 
 class _BaseMeetTool(BaseTool):

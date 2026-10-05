@@ -25,10 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New `autonoma/splash.py`.** Responsive amber block-letter `AUTONOMA` logo,
   built once from a bitmap font with five width/height variants so it steps
   down cleanly on smaller terminals.
-- **Fixed `json` NameError in TUI HTTP helpers.** `_http_get` / `_http_post`
-  called `json.loads` but the module never imported `json` at module scope,
-  so connector status lookups failed with a swallowed `name 'json' is not
-  defined`.
+- **Fixed `json` NameError in TUI HTTP helpers.** The `_http` request
+  helper called `json.loads` but the module never imported `json` at module
+  scope, so connector status lookups failed with a swallowed `name 'json' is
+  not defined`.
+- **One command: `autonoma`.** The console script now always opens the TUI;
+  `--start`, `-c/--config` and `--log-level` are gone. Start/stop the agent,
+  edit config, watch logs and open the dashboard from inside the TUI.
+  `autonoma.main.run()` remains importable for embedders that host the
+  agent without a terminal.
+- **No more log spam on the terminal.** When the TUI runs the agent the
+  root logger gets no stderr stream handler — logs go to the TUI log
+  viewer, the workspace log file and the dashboard's Logs page only.
+
+### Fixed
+- **Workspace log file keeps recording after the agent starts.**
+  `configure_root_logger` mistook the TUI's `FileHandler` for a console
+  handler (it subclasses `StreamHandler`) and stripped it on every agent
+  start, so the log file went silent while the agent ran.
 
 ### Added
 - `textual>=8.0,<9.0` as a runtime dependency, and `tests/tui_test.py`

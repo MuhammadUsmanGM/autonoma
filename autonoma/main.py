@@ -15,12 +15,11 @@ from autonoma.cortex.contact_enricher import ContactEnricher
 from autonoma.cortex.contacts import ContactStore
 from autonoma.cortex.context import ContextAssembler
 from autonoma.cortex.followup_scheduler import FollowupScheduler
-from autonoma.cortex.router import AgentRouter
 from autonoma.cortex.session import SessionManager
 from autonoma.cortex.state_machine import ConversationStateStore
 from autonoma.cortex.trace_store import TraceStore
 from autonoma.executor.sandbox import Sandbox, SandboxConfig
-from autonoma.executor.task_queue import TaskQueue, Priority
+from autonoma.executor.task_queue import TaskQueue
 from autonoma.executor.tool_runner import ToolRunner
 from autonoma.gateway.auth import AuthMiddleware
 from autonoma.gateway.channels.cli import CLIChannel
@@ -50,7 +49,11 @@ async def run(
     # Configure logging — format is driven by observability config (text|json).
     level = getattr(logging, (log_level or config.log_level).upper(), logging.INFO)
     from autonoma.logs import configure_root_logger, setup_log_buffer
-    configure_root_logger(level, config.observability.log_format)
+    # Console logging only when NOT embedded under the TUI — the TUI owns
+    # the terminal, so agent logs go to its log viewer / ring buffers only.
+    configure_root_logger(
+        level, config.observability.log_format, console=agent_runner is None
+    )
     setup_log_buffer()
 
     # Initialize OpenTelemetry if configured. No-op when the OTel SDK isn't
@@ -188,17 +191,13 @@ async def run(
         config.conversation_state, state_store, contact_store, task_queue,
     )
 
-    # 10. Create agent router
-    agent_router = AgentRouter()
-    agent_router.register(config.name, agent, default=True)
-
-    # 11. Create gateway router (with pre-agent triage)
+    # 10. Create gateway router (agent registry + pre-agent triage)
     from autonoma.cortex.triage import Triage
     triage = Triage(config.triage, session_dir=config.session_dir)
-    gateway_router = GatewayRouter(agent_router, triage=triage)
+    gateway_router = GatewayRouter(triage=triage)
+    gateway_router.register(config.name, agent, default=True)
 
-    # 12. Create HTTP server (always on — needed for dashboard API + channels)
-    ch = config.channels
+    # 11. Create HTTP server (always on — needed for dashboard API + channels)
     # Look for dashboard/dist relative to the project root
     static_dir = Path(__file__).parent.parent / "dashboard" / "dist"
     http_server = HTTPServer(
@@ -223,11 +222,78 @@ async def run(
     except Exception:
         pass
 
-    # 13. Create gateway server
+    # 12. Create gateway server
     auth = AuthMiddleware()
     server = GatewayServer(config.gateway, gateway_router, auth, http_server=http_server)
 
-    # 14. Register CLI channel — ONLY when running headless.
+    # 13. Register channels (CLI when headless + every enabled optional one)
+    _register_channels(server, config, http_server, agent_runner)
+
+    # 14. Register dashboard API endpoints
+    from autonoma.gateway.channels.connectors_api import register_connector_routes
+    register_connector_routes(http_server, connector_registry)
+    from autonoma.gateway.channels.dashboard_api import register_dashboard_routes
+    register_dashboard_routes(
+        http_server, memory_store, session_manager,
+        gateway_router, server,
+        task_queue=task_queue,
+        trace_store=trace_store,
+        skill_registry=skill_registry,
+        agent_runner=agent_runner,
+        contact_store=contact_store,
+    )
+
+    # 14b. Register task handlers. ``agent_prompt`` is the default skill for
+    # scheduled jobs: payload["prompt"] is fed into the agent loop exactly as
+    # if a user had sent it on a dedicated channel, so cron tasks can say
+    # things like "check my Gmail and summarize new emails to WhatsApp" and
+    # the full tool-using loop answers them.
+    async def _agent_prompt_handler(payload: dict) -> str:
+        prompt = payload.get("prompt") or ""
+        if not prompt:
+            raise ValueError("agent_prompt task requires payload.prompt")
+        from autonoma.schema import Message
+        channel = payload.get("channel", "scheduler")
+        channel_id = payload.get("channel_id", f"scheduler:{channel}")
+        user_id = payload.get("user_id", "scheduler")
+        msg = Message(
+            channel=channel,
+            channel_id=channel_id,
+            user_id=user_id,
+            content=prompt,
+        )
+        response = await agent.handle_message(msg)
+        return response.content[:2000] if response.content else ""
+
+    task_queue.register_handler("agent_prompt", _agent_prompt_handler)
+
+    # 15. Start everything
+    consolidation_interval = config.memory.decay_interval if config.memory.consolidation_enabled else 0
+    async with MemoryFlusher(memory_store, consolidation_interval=consolidation_interval):
+        await task_queue.start()
+        await followup_scheduler.start()
+        await server.start()
+
+        try:
+            await server.wait_for_channels()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await followup_scheduler.stop()
+            await task_queue.stop()
+            await server.stop()
+
+    logger.info("Autonoma shut down cleanly.")
+
+
+def _register_channels(
+    server: GatewayServer,
+    config,
+    http_server: HTTPServer,
+    agent_runner: Any | None,
+) -> None:
+    """Register the CLI channel (headless only) and every enabled channel."""
+    # CLI channel — ONLY when running headless.
     #
     # When the agent is embedded under the TUI (agent_runner is passed in by
     # AgentRunner._thread_main), the TUI owns stdin in raw mode. Registering
@@ -238,12 +304,11 @@ async def run(
     # (and the web dashboard has /api/chat) so there's nothing to lose by
     # skipping the CLI channel in embedded mode.
     if agent_runner is None:
-        cli_channel = CLIChannel(agent_name=config.name)
-        server.register_channel(cli_channel)
+        server.register_channel(CLIChannel(agent_name=config.name))
     else:
         logger.info("Embedded mode — skipping CLI channel (TUI owns stdin).")
 
-    # 15. Register optional channels (deferred imports)
+    ch = config.channels
     if ch.rest.enabled:
         from autonoma.gateway.channels.rest import RESTChannel
         server.register_channel(RESTChannel(ch.rest, http_server))
@@ -268,62 +333,6 @@ async def run(
         from autonoma.gateway.channels.gmail import GmailChannel
         server.register_channel(GmailChannel(ch.gmail))
         logger.info("Gmail channel enabled")
-
-    # 16. Register dashboard API endpoints
-    from autonoma.gateway.channels.connectors_api import register_connector_routes
-    register_connector_routes(http_server, connector_registry)
-    from autonoma.gateway.channels.dashboard_api import register_dashboard_routes
-    register_dashboard_routes(
-        http_server, memory_store, session_manager,
-        gateway_router, server,
-        task_queue=task_queue,
-        trace_store=trace_store,
-        skill_registry=skill_registry,
-        agent_runner=agent_runner,
-        contact_store=contact_store,
-    )
-
-    # 16b. Register task handlers. ``agent_prompt`` is the default skill for
-    # scheduled jobs: payload["prompt"] is fed into the agent loop exactly as
-    # if a user had sent it on a dedicated channel, so cron tasks can say
-    # things like "check my Gmail and summarize new emails to WhatsApp" and
-    # the full tool-using loop answers them.
-    async def _agent_prompt_handler(payload: dict) -> str:
-        prompt = payload.get("prompt") or ""
-        if not prompt:
-            raise ValueError("agent_prompt task requires payload.prompt")
-        from autonoma.schema import Message
-        channel = payload.get("channel", "scheduler")
-        channel_id = payload.get("channel_id", f"scheduler:{channel}")
-        user_id = payload.get("user_id", "scheduler")
-        msg = Message(
-            channel=channel,
-            channel_id=channel_id,
-            user_id=user_id,
-            content=prompt,
-        )
-        response = await agent.handle_message(msg)
-        return response.content[:2000] if response.content else ""
-
-    task_queue.register_handler("agent_prompt", _agent_prompt_handler)
-
-    # 17. Start everything
-    consolidation_interval = config.memory.decay_interval if config.memory.consolidation_enabled else 0
-    async with MemoryFlusher(memory_store, consolidation_interval=consolidation_interval):
-        await task_queue.start()
-        await followup_scheduler.start()
-        await server.start()
-
-        try:
-            await server.wait_for_channels()
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            pass
-        finally:
-            await followup_scheduler.stop()
-            await task_queue.stop()
-            await server.stop()
-
-    logger.info("Autonoma shut down cleanly.")
 
 
 def _build_connector_registry(
@@ -456,10 +465,12 @@ def _refresh_connector_tools(
 
 
 def cli_entry() -> None:
-    """Synchronous entry point for the `autonoma` console script.
+    """Entry point for the `autonoma` console script — the one command.
 
-    With no arguments, launches the interactive TUI control panel.
-    With --start or -c, launches the agent directly (headless / CI mode).
+    Launches the interactive TUI, which is the single control surface:
+    agent start/stop, config, channels, logs and the dashboard are all
+    managed from inside it. ``run()`` stays importable for embedders who
+    host the agent without a terminal.
     """
     from autonoma import __version__
 
@@ -471,31 +482,8 @@ def cli_entry() -> None:
         action="version",
         version=f"autonoma {__version__}",
     )
-    parser.add_argument(
-        "-c", "--config", default=None, help="Path to config YAML file"
-    )
-    parser.add_argument(
-        "--start",
-        action="store_true",
-        help="Start the agent directly, bypassing the TUI.",
-    )
-    parser.add_argument(
-        "--log-level",
-        default=None,
-        choices=["debug", "info", "warning", "error"],
-        help="Log level override",
-    )
-    args = parser.parse_args()
+    parser.parse_args()
 
-    # Direct-start mode (headless / CI) — skip TUI
-    if args.start or args.config:
-        try:
-            asyncio.run(run(config_path=args.config, log_level=args.log_level))
-        except KeyboardInterrupt:
-            print("\nGoodbye.")
-        return
-
-    # Default: launch interactive TUI
     try:
         from autonoma.tui import AutonomaTUI
         AutonomaTUI().run()
