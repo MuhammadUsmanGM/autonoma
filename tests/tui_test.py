@@ -254,6 +254,32 @@ class WizardTest(unittest.TestCase):
         os.environ["ANTHROPIC_API_KEY"] = "placeholder"
         self.assertFalse(Workspace(Path(_HOME)).is_first_run())
 
+    def test_custom_provider_opens_one_form_with_all_fields(self):
+        async def scenario():
+            app = AutonomaTUI()
+            app.ensure_agent = lambda: None  # type: ignore[method-assign]
+            async with app.run_test(size=(100, 40)) as pilot:
+                await pilot.pause()
+                providers = pilot.app.screen.query_one("#providers")
+                providers.highlighted = len(PROVIDER_SPECS) - 1
+                await pilot.press("enter")
+                await pilot.pause()
+
+                screen = pilot.app.screen
+                self.assertIsInstance(screen, SetupWizardScreen)
+                self.assertTrue(screen.query_one("#custom-provider").display)
+                for field_id in (
+                    "#provider-name",
+                    "#custom-api-key",
+                    "#base-url",
+                    "#custom-model-id",
+                ):
+                    screen.query_one(field_id)
+                self.assertFalse(screen.query_one("#step-key").display)
+                self.assertFalse(screen.query_one("#step-model").display)
+
+        _run(scenario())
+
     def test_forced_first_run_wizard_saves_everything(self):
         async def scenario():
             app = AutonomaTUI()

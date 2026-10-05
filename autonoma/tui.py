@@ -1523,8 +1523,13 @@ class SetupWizardScreen(BaseScreen):
             Vertical(
                 Label("Name shown in Autonoma"),
                 Input(placeholder="e.g. My company AI", id="provider-name"),
+                Label("API key"),
+                Input(placeholder="API key (hidden)", password=True, id="custom-api-key"),
                 Label("OpenAI-compatible API base URL"),
                 Input(placeholder="https://ai.example.com/v1", id="base-url"),
+                Label("Model ID"),
+                Input(placeholder="e.g. provider/model-name", id="custom-model-id"),
+                Button("Check and save", id="custom-provider-submit", variant="primary"),
                 id="custom-provider",
                 classes="step",
             ),
@@ -1577,14 +1582,15 @@ class SetupWizardScreen(BaseScreen):
         custom = self.provider == "custom"
         key_step = 3 if custom else 2
         model_step = 4 if custom else 3
+        step_count = 2 if custom else 3
         titles = {
             1: "AI provider",
-            2: "Provider details" if custom else "API key",
+            2: "Custom provider" if custom else "API key",
             key_step: "API key",
             model_step: "Model",
         }
         self.query_one("#wiz-head", Static).update(
-            f"[bold]Setup — step {step} of {model_step} · {titles[step]}[/]"
+            f"[bold]Setup — step {step} of {step_count} · {titles[step]}[/]"
         )
         self.query_one("#providers", OptionList).display = step == 1
         self.query_one("#custom-provider", Vertical).display = custom and step == 2
@@ -1602,10 +1608,12 @@ class SetupWizardScreen(BaseScreen):
             self.query_one("#providers", OptionList).focus()
         elif custom and step == 2:
             self.query_one("#provider-name", Input).value = self.provider_name
+            self.query_one("#custom-api-key", Input).value = self.api_key
             self.query_one("#base-url", Input).value = self.base_url
+            self.query_one("#custom-model-id", Input).value = self.model
             self.query_one("#wiz-hint", Static).update(
-                "[dim]Use the base URL for an OpenAI-compatible API. "
-                "Press Tab to move between fields, then Enter.[/]"
+                "[dim]Fill in all four fields. Use an OpenAI-compatible API "
+                "base URL. Tab between fields, then press Enter to check and save.[/]"
             )
             self.query_one("#provider-name", Input).focus()
         elif step == key_step:
@@ -1664,20 +1672,20 @@ class SetupWizardScreen(BaseScreen):
             if cfg and cfg.llm.provider == "custom":
                 self.provider_name = cfg.llm.provider_name
                 self.base_url = cfg.llm.base_url
+                self.model = cfg.llm.model
+                self.api_key = cfg.llm.api_key or self.api_key
             self._show_step(2)
         else:
             self.provider_name = ""
             self.base_url = ""
             self._show_step(2)
 
-    @on(Input.Submitted, "#provider-name")
-    def _provider_name_submitted(self, event: Input.Submitted) -> None:
-        self.provider_name = event.value.strip()
-        self.query_one("#base-url", Input).focus()
-
-    @on(Input.Submitted, "#base-url")
-    def _custom_details_submitted(self, event: Input.Submitted) -> None:
-        self.base_url = event.value.strip().rstrip("/")
+    @on(Button.Pressed, "#custom-provider-submit")
+    def _submit_custom_provider(self) -> None:
+        self.provider_name = self.query_one("#provider-name", Input).value.strip()
+        self.api_key = self.query_one("#custom-api-key", Input).value.strip()
+        self.base_url = self.query_one("#base-url", Input).value.strip().rstrip("/")
+        self.model = self.query_one("#custom-model-id", Input).value.strip()
         parts = urllib.parse.urlsplit(self.base_url)
         if not self.provider_name:
             self._error("Enter a name for this provider.")
@@ -1692,7 +1700,15 @@ class SetupWizardScreen(BaseScreen):
             self._error("Enter a valid http:// or https:// API base URL.")
             self.query_one("#base-url", Input).focus()
             return
-        self._show_step(3)
+        if not self.api_key:
+            self._error("Enter an API key for this provider.")
+            self.query_one("#custom-api-key", Input).focus()
+            return
+        if not self.model:
+            self._error("Enter a model ID for this provider.")
+            self.query_one("#custom-model-id", Input).focus()
+            return
+        self._save_flow()
 
     @on(Input.Submitted, "#api-key")
     def _submit_key(self, event: Input.Submitted) -> None:
@@ -1750,7 +1766,7 @@ class SetupWizardScreen(BaseScreen):
                 base_url=self.base_url,
             ))
         except Exception as exc:
-            self._show_step(4 if self.provider == "custom" else 3)
+            self._show_step(2 if self.provider == "custom" else 3)
             self._error(
                 f"Could not use this model. Check the API key, model ID, or "
                 f"base URL, then try again. ({str(exc)[:180]})"
