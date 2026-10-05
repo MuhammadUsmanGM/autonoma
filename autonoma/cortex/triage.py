@@ -109,7 +109,7 @@ class Triage:
     ):
         self._config = config
         self._llm_classifier = llm_classifier
-        self._cache: dict[tuple[str, str], tuple[float, TriageDecision]] = {}
+        self._cache: dict[tuple[str, str, str], tuple[float, TriageDecision]] = {}
         self._audit_path: Path | None = None
         if session_dir:
             self._audit_path = Path(session_dir) / "triage.log"
@@ -247,8 +247,26 @@ class Triage:
 
     # ---- Cache --------------------------------------------------------------
 
-    def _cache_key(self, message: Message) -> tuple[str, str]:
-        return (message.channel, (message.user_id or "").lower())
+    def _cache_key(self, message: Message) -> tuple[str, str, str]:
+        metadata = message.metadata or {}
+        fingerprint = json.dumps(
+            {
+                "content": message.content,
+                "subject": metadata.get("subject", ""),
+                "headers": metadata.get("headers", {}),
+                "is_group": metadata.get("is_group", False),
+                "is_mention": metadata.get("is_mention", False),
+                "is_reply_to_bot": metadata.get("is_reply_to_bot", False),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        content_hash = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+        return (
+            message.channel,
+            (message.user_id or "").lower(),
+            content_hash,
+        )
 
     def _cache_get(self, message: Message) -> TriageDecision | None:
         key = self._cache_key(message)
@@ -262,8 +280,8 @@ class Triage:
         return decision
 
     def _cache_put(self, message: Message, decision: TriageDecision) -> None:
-        # Only cache filter outcomes — never cache "reply" so a newsletter
-        # sender who later sends a real personal email still gets through.
+        # Only cache exact message duplicates. Sender-only caching could let a
+        # newsletter or group message suppress a later personal message.
         if decision.decision in {"ignore", "archive"}:
             self._cache[self._cache_key(message)] = (time.time(), decision)
 

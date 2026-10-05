@@ -19,21 +19,37 @@ from autonoma.observability.metrics import (
 
 logger = logging.getLogger(__name__)
 
-# Webhook Tracking Buffer
-# Used by the dashboard to inspect incoming external webhooks and replay them.
+MAX_REQUEST_BYTES = 1_048_576
+
+
+class _RequestTooLarge(ValueError):
+    """Raised when an HTTP request body exceeds the configured limit."""
+
+
+# Webhook metadata buffer used by the dashboard for request inspection.
 webhook_buffer: list[dict[str, Any]] = []
 
 def _record_webhook(request: dict[str, Any]) -> None:
+    path = request["path"].split("?", 1)[0]
+    if "/webhook" not in path:
+        return
+
     # Generate ID and timestamp
     entry_id = f"wh_{int(datetime.now().timestamp() * 1000)}"
     entry = {
         "id": entry_id,
         "timestamp": datetime.now().isoformat(),
         "method": request["method"],
-        "path": request["path"],
-        "headers": request["headers"],
-        "body": request["body"],
-        "json": request.get("json", {}),
+        "path": path,
+        "headers": {
+            key: "[REDACTED]"
+            if any(part in key.lower() for part in ("authorization", "cookie", "token", "secret", "api-key", "signature"))
+            else value
+            for key, value in request["headers"].items()
+        },
+        "body": "",
+        "json": {},
+        "body_captured": False,
     }
     webhook_buffer.append(entry)
     if len(webhook_buffer) > 100:
@@ -179,7 +195,7 @@ class HTTPServer:
                 return
 
             # Record webhook payloads before they execute
-            if "/api/chat" in request["path"] or "/webhook" in request["path"]:
+            if "/webhook" in request["path"]:
                 _record_webhook(request)
 
             handler = self._match_route(request["method"], request["path"])
@@ -200,6 +216,15 @@ class HTTPServer:
                 self._write_response(writer, status, headers, body)
                 status_code = status
 
+            await writer.drain()
+        except _RequestTooLarge:
+            status_code = 413
+            self._write_response(
+                writer,
+                413,
+                {"Content-Type": "application/json"},
+                json.dumps({"error": "Request body too large"}),
+            )
             await writer.drain()
         except Exception as e:
             logger.error("HTTP handler error: %s", e, exc_info=True)
@@ -334,7 +359,14 @@ class HTTPServer:
 
             # Read body if Content-Length present
             body = ""
-            content_length = int(headers.get("content-length", "0"))
+            try:
+                content_length = int(headers.get("content-length", "0"))
+            except ValueError:
+                return None
+            if content_length < 0:
+                return None
+            if content_length > MAX_REQUEST_BYTES:
+                raise _RequestTooLarge
             if content_length > 0:
                 raw_body = await asyncio.wait_for(
                     reader.readexactly(content_length), timeout=30.0
@@ -374,7 +406,7 @@ class HTTPServer:
         body: str,
     ) -> None:
         """Write an HTTP/1.1 response."""
-        reason = {200: "OK", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 500: "Internal Server Error"}.get(status, "OK")
+        reason = {200: "OK", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 413: "Payload Too Large", 500: "Internal Server Error"}.get(status, "OK")
         encoded_body = body.encode("utf-8")
         headers.setdefault("Content-Length", str(len(encoded_body)))
         headers.setdefault("Connection", "close")

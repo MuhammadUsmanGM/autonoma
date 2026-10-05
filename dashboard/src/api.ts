@@ -52,7 +52,7 @@ export const api = {
     request<{ cancelled: string }>(`/tasks/${id}`, { method: 'DELETE' }),
 
   sendChat: async (message: string, sessionId?: string) => {
-    const res = await fetch(`${BASE}/chat`, {
+    const res = await fetch(`${BASE}/dashboard/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -204,6 +204,7 @@ export interface WebhookEntry {
   headers: Record<string, string>
   body: string
   json: Record<string, any>
+  body_captured: boolean
 }
 
 export type Page = 'overview' | 'chat' | 'memory' | 'sessions' | 'traces' | 'tasks' | 'soul' | 'settings' | 'channels' | 'connectors' | 'contacts' | 'logs' | 'webhooks'

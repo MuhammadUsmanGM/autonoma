@@ -206,6 +206,9 @@ To loosen any of this, set keys under `sandbox:` in `autonoma.yaml`; the full
 list of options and what they mean is in
 [`autonoma/executor/sandbox.py`](autonoma/executor/sandbox.py) (`SandboxConfig`).
 
+The gateway currently accepts loopback hosts only. Do not expose its HTTP or
+WebSocket ports to a network; dashboard routes do not yet require login.
+
 Worth knowing: on Windows the memory/CPU limits are advisory only — for a
 real deployment use WSL2 or a container.
 

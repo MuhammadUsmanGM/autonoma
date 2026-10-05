@@ -921,6 +921,8 @@ def register_dashboard_routes(
             target = next((x for x in webhook_buffer if x["id"] == w_id), None)
             if not target:
                 return _err(404, {"error": "Webhook not found"})
+            if not target.get("body_captured"):
+                return _err(409, {"error": "Webhook bodies are not stored, so this request cannot be replayed."})
 
             # Bypass socket and invoke handler directly to mimic replay
             handler = http_server._match_route(target["method"], target["path"])
@@ -1122,7 +1124,7 @@ def register_dashboard_routes(
     http_server.add_route("GET", "/api/memories/search", handle_memories_search)
     http_server.add_route("DELETE", "/api/memories", handle_memory_delete)
     http_server.add_route("GET", "/api/sessions", handle_sessions)
-    http_server.add_route("POST", "/api/chat", handle_chat)
+    http_server.add_route("POST", "/api/dashboard/chat", handle_chat)
     http_server.add_route("GET", "/api/traces", handle_traces)
     http_server.add_route("GET", "/api/traces/stats", handle_trace_stats)
     http_server.add_route("GET", "/api/usage", handle_usage)

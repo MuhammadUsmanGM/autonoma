@@ -15,6 +15,7 @@ window so it can refresh the connectors list.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 from urllib.parse import parse_qs, urlsplit
@@ -33,12 +34,23 @@ _CALLBACK_HTML = """<!doctype html>
 <script>
   try {{
     if (window.opener) {{
-      window.opener.postMessage({{ type: "autonoma:connector", name: "{name}", status: "{status}" }}, "*");
+    window.opener.postMessage({{ type: "autonoma:connector", name: {name}, status: {status} }}, "*");
       setTimeout(() => window.close(), 600);
     }}
   }} catch (e) {{}}
 </script>
 </body></html>"""
+
+
+def _callback_page(title: str, message: str, name: str, status: str) -> str:
+    safe_name = json.dumps(name).replace("<", "\\u003c")
+    safe_status = json.dumps(status).replace("<", "\\u003c")
+    return _CALLBACK_HTML.format(
+        title=html.escape(title),
+        message=html.escape(message),
+        name=safe_name,
+        status=safe_status,
+    )
 
 
 def register_connector_routes(http_server, registry: ConnectorRegistry) -> None:
@@ -102,16 +114,16 @@ def register_connector_routes(http_server, registry: ConnectorRegistry) -> None:
         name = _oauth_name(request["path"])
         c = registry.get(name)
         if c is None:
-            html = _CALLBACK_HTML.format(
+            html = _callback_page(
                 title="Unknown connector",
-                message=f"No connector named <code>{name}</code> is registered.",
+                message=f"No connector named {name} is registered.",
                 name=name,
                 status="error",
             )
             return 404, {"Content-Type": "text/html"}, html
         params = _query(request["path"])
         if "error" in params:
-            html = _CALLBACK_HTML.format(
+            html = _callback_page(
                 title="Authorization denied",
                 message=params.get("error_description", params["error"]),
                 name=name,
@@ -122,7 +134,7 @@ def register_connector_routes(http_server, registry: ConnectorRegistry) -> None:
             status = await c.complete_auth(params)
         except Exception as e:
             logger.exception("connector %s callback failed", name)
-            html = _CALLBACK_HTML.format(
+            html = _callback_page(
                 title="Connection failed",
                 message=str(e),
                 name=name,
@@ -130,9 +142,9 @@ def register_connector_routes(http_server, registry: ConnectorRegistry) -> None:
             )
             return 400, {"Content-Type": "text/html"}, html
         registry.notify_tools_changed()
-        html = _CALLBACK_HTML.format(
+        html = _callback_page(
             title=f"{c.manifest.display_name} connected",
-            message=f"Signed in as <strong>{status.account_label or status.account_id}</strong>.",
+            message=f"Signed in as {status.account_label or status.account_id}.",
             name=name,
             status="connected",
         )

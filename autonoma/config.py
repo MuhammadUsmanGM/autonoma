@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,20 @@ class GatewayConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     http_port: int = 8766
+
+    def __post_init__(self) -> None:
+        host = str(self.host).strip()
+        if host.lower() == "localhost":
+            return
+        try:
+            if ipaddress.ip_address(host).is_loopback:
+                return
+        except ValueError:
+            pass
+        raise ValueError(
+            "gateway.host must be localhost or a loopback IP; remote binding "
+            "is disabled until HTTP and WebSocket authentication are configured."
+        )
 
 
 @dataclass

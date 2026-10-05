@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Webhook, RefreshCw, Play, Clock, Braces, ChevronRight } from 'lucide-react'
+import { Webhook, RefreshCw, Clock, Braces, ChevronRight } from 'lucide-react'
 import { api } from '../api'
-import { toast } from 'sonner'
 import type { WebhookEntry } from '../types'
 import Dropdown from '../components/Dropdown'
 
 const CHANNELS = [
   { label: 'All requests', value: '' },
-  { label: 'REST', value: '/api/chat' },
   { label: 'WhatsApp', value: 'whatsapp' },
 ]
 
@@ -17,7 +15,6 @@ export default function Webhooks() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<WebhookEntry | null>(null)
-  const [replaying, setReplaying] = useState<string | null>(null)
 
   const loadHooks = async () => {
     try {
@@ -39,19 +36,6 @@ export default function Webhooks() {
     const int = setInterval(loadHooks, 5000)
     return () => clearInterval(int)
   }, [filter])
-
-  const handleReplay = async (id: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation()
-    setReplaying(id)
-    try {
-      await api.replayWebhook(id)
-      toast.success('Successfully dispatched replay.')
-    } catch (err: any) {
-      toast.error(`Replay failed: ${err.message}`)
-    } finally {
-      setReplaying(null)
-    }
-  }
 
   return (
     <div className="flex h-full font-sans pb-10">
@@ -141,18 +125,9 @@ export default function Webhooks() {
                 <div className="text-xs text-[var(--text-faint)]">Captured {new Date(selected.timestamp).toLocaleString()}</div>
               </div>
               
-              <button
-                onClick={(e) => handleReplay(selected.id, e)}
-                disabled={replaying === selected.id}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-[var(--accent)] text-black shadow-lg shadow-[var(--accent-glow)] hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 cursor-pointer"
-              >
-                {replaying === selected.id ? (
-                  <RefreshCw size={16} className="animate-spin" />
-                ) : (
-                  <Play size={16} />
-                )}
-                REPLAY HOOK
-              </button>
+              <span className="max-w-56 text-right text-xs text-[var(--text-muted)]">
+                Payloads aren’t stored, so requests can’t be replayed.
+              </span>
             </div>
 
             {/* Payload View */}
@@ -194,7 +169,7 @@ export default function Webhooks() {
                    </div>
                 ) : (
                   <div className="flex items-center gap-2 p-4 rounded-xl bg-white/[0.02] border border-[var(--border-faint)] text-xs text-[var(--text-muted)] italic">
-                     No body attached to this payload.
+                     Body not saved to protect message privacy.
                   </div>
                 )}
               </section>

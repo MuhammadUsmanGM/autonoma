@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -193,7 +194,22 @@ async def run(
 
     # 10. Create gateway router (agent registry + pre-agent triage)
     from autonoma.cortex.triage import Triage
-    triage = Triage(config.triage, session_dir=config.session_dir)
+    triage_classifier = None
+    if config.triage.llm_classifier_enabled:
+        from autonoma.cortex.triage_classifier import create_llm_classifier
+
+        triage_provider = provider
+        classifier_model = config.triage.classifier_model.strip()
+        if classifier_model and classifier_model != config.llm.model:
+            triage_provider = create_provider(
+                replace(config.llm, model=classifier_model)
+            )
+        triage_classifier = create_llm_classifier(triage_provider)
+    triage = Triage(
+        config.triage,
+        session_dir=config.session_dir,
+        llm_classifier=triage_classifier,
+    )
     gateway_router = GatewayRouter(triage=triage)
     gateway_router.register(config.name, agent, default=True)
 

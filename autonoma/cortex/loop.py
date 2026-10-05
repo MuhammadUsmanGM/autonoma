@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from contextvars import ContextVar, Token
 from typing import Any
 
 from autonoma.cortex.contact_enricher import ContactEnricher
@@ -80,6 +81,12 @@ class AgentLoop:
         self._contacts = contact_store
         self._state_store = state_store
         self._contact_enricher = contact_enricher
+        self._current_live_trace: ContextVar[Any | None] = ContextVar(
+            f"agent_loop_live_trace_{id(self)}", default=None
+        )
+        self._current_otel_span: ContextVar[Any | None] = ContextVar(
+            f"agent_loop_otel_span_{id(self)}", default=None
+        )
 
     async def process(self, message: Message, session_id: str) -> AgentResponse:
         """Run the full 9-stage pipeline."""
@@ -95,8 +102,6 @@ class AgentLoop:
                 channel=message.channel,
                 user_id=message.user_id,
             )
-        self._current_live_trace = live_trace
-
         # Start an OpenTelemetry span for this loop invocation. No-op when
         # OTel is not configured, so there's no cost for local / dev runs.
         otel_span = otel.start_trace_span(
@@ -108,7 +113,8 @@ class AgentLoop:
                 "autonoma.trace_id": live_trace.id if live_trace else "",
             },
         )
-        self._current_otel_span = otel_span
+        live_trace_token: Token = self._current_live_trace.set(live_trace)
+        otel_span_token: Token = self._current_otel_span.set(otel_span)
 
         try:
             # Stage 0: VALIDATE
@@ -245,6 +251,9 @@ class AgentLoop:
                 content="I encountered an error processing your message. Please try again.",
                 metadata={"error": str(e)},
             )
+        finally:
+            self._current_live_trace.reset(live_trace_token)
+            self._current_otel_span.reset(otel_span_token)
 
     @staticmethod
     def _record_loop_metric(status: str, channel: str, elapsed: float) -> None:
@@ -454,7 +463,7 @@ class AgentLoop:
             tout = int(response.usage.get("output_tokens", 0) or 0)
             cost = cost_for(model, tin, tout)
 
-            live = getattr(self, "_current_live_trace", None)
+            live = self._current_live_trace.get()
             if live:
                 live.add_usage(tin, tout, cost, model=model)
 
@@ -524,12 +533,13 @@ class AgentLoop:
         """Stage 8: Emit trace event (logged in Phase 1)."""
         trace["stages"][stage] = data
         # Also populate the structured live trace if available
-        if hasattr(self, '_current_live_trace') and self._current_live_trace:
-            self._current_live_trace.add_span(stage, data)
+        live_trace = self._current_live_trace.get()
+        if live_trace:
+            live_trace.add_span(stage, data)
         # Mirror the stage as an OTel span event so pipeline shape is visible
         # to any OpenTelemetry backend.
         otel.add_trace_event(
-            getattr(self, "_current_otel_span", None),
+            self._current_otel_span.get(),
             f"stage.{stage}",
             data,
         )
