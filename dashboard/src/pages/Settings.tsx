@@ -142,12 +142,12 @@ export default function Settings() {
   }
 
   const handleRestart = async () => {
-    const ok = confirm('Trigger remote agent restart? Existing sessions may be interrupted.')
+    const ok = confirm('Restart Autonoma? Active sessions may be interrupted.')
     if (!ok) return
     
     try {
       await api.restartAgent()
-      toast.success('Restart command transmitted. Reconnecting in 5s...')
+      toast.success('Restart requested. Reconnecting in 5 seconds...')
       setTimeout(() => window.location.reload(), 5000)
     } catch (e: any) {
       toast.error(`Restart failed: ${e.message}`)

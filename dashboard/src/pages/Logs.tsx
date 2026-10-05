@@ -139,7 +139,7 @@ export default function Logs() {
       <header className="shrink-0 flex items-center justify-between p-4 border-b border-[var(--border)] bg-[var(--bg-card)]/80 backdrop-blur-md sticky top-0 z-10">
         <div className="flex items-center gap-4 flex-1">
           <Terminal size={18} className="text-[var(--accent)]" />
-          <h2 className="text-lg font-bold text-[var(--text)] tracking-wider">SYSTEM.LOGS</h2>
+          <h2 className="text-lg font-bold text-[var(--text)]">Log history</h2>
           
           <div className="h-6 w-px bg-[var(--border)] mx-2" />
           

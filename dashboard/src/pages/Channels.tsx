@@ -150,7 +150,7 @@ export default function Channels() {
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Channels</h2>
-          <p className="text-sm text-[var(--text-muted)]">Monitor and orchestrate your autonomous channels.</p>
+          <p className="text-sm text-[var(--text-muted)]">Connect and manage the apps you message Autonoma through.</p>
         </div>
         <button 
           onClick={handleManualRefresh}

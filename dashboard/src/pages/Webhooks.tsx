@@ -7,7 +7,7 @@ import type { WebhookEntry } from '../types'
 import Dropdown from '../components/Dropdown'
 
 const CHANNELS = [
-  { label: 'ALL PROBES', value: '' },
+  { label: 'All requests', value: '' },
   { label: 'REST', value: '/api/chat' },
   { label: 'WhatsApp', value: 'whatsapp' },
 ]
@@ -63,7 +63,7 @@ export default function Webhooks() {
               <div className="p-2 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]">
                 <Webhook size={18} />
               </div>
-              <h2 className="text-xl font-bold tracking-tight text-[var(--text)]">Webhooks</h2>
+              <h2 className="text-xl font-bold tracking-tight text-[var(--text)]">Webhook history</h2>
             </div>
             <button 
               onClick={loadHooks}
@@ -83,7 +83,7 @@ export default function Webhooks() {
           {hooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center pt-20 text-[var(--text-muted)] opacity-50">
               <Webhook size={32} className="mb-4" />
-              <p className="text-sm">No webhook traces captured.</p>
+              <p className="text-sm">No webhook requests yet.</p>
             </div>
           ) : (
             <AnimatePresence>

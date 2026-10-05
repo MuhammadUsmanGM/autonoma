@@ -9,12 +9,12 @@ import EmptyState from '../components/EmptyState'
 import type { TaskItem, TaskStats } from '../types'
 
 const STATUS_CONFIG: Record<string, { color: string; icon: typeof CheckCircle2; label: string }> = {
-  pending: { color: 'text-yellow-400', icon: Clock, label: 'QUEUED' },
-  running: { color: 'text-[var(--accent)]', icon: Loader2, label: 'RUNNING' },
-  completed: { color: 'text-[var(--success)]', icon: CheckCircle2, label: 'DONE' },
-  failed: { color: 'text-[var(--error)]', icon: AlertTriangle, label: 'FAILED' },
-  cancelled: { color: 'text-white/30', icon: XCircle, label: 'CANCELLED' },
-  scheduled: { color: 'text-sky-400', icon: CalendarClock, label: 'SCHEDULED' },
+  pending: { color: 'text-yellow-400', icon: Clock, label: 'Queued' },
+  running: { color: 'text-[var(--accent)]', icon: Loader2, label: 'Running' },
+  completed: { color: 'text-[var(--success)]', icon: CheckCircle2, label: 'Done' },
+  failed: { color: 'text-[var(--error)]', icon: AlertTriangle, label: 'Failed' },
+  cancelled: { color: 'text-white/30', icon: XCircle, label: 'Cancelled' },
+  scheduled: { color: 'text-sky-400', icon: CalendarClock, label: 'Scheduled' },
 }
 
 // Common cron presets. Picked for the "digital employee" use-cases that
@@ -95,7 +95,7 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
 
         <div className="flex items-center gap-2">
           <Icon size={12} className={`${cfg.color} ${task.status === 'running' ? 'animate-spin' : ''}`} />
-          <span className={`text-[10px] font-bold uppercase tracking-widest ${cfg.color}`}>
+          <span className={`text-[10px] font-bold ${cfg.color}`}>
             {cfg.label}
           </span>
         </div>
@@ -145,7 +145,7 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
                <div className="grid grid-cols-2 gap-8">
                   {/* Skill & Payload */}
                   <div>
-                    <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">Skill Target</h4>
+                    <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">Task type</h4>
                     <div className="bg-black/20 rounded-xl p-4 border border-white/5 font-mono text-xs">
                        <span className="text-[var(--accent)] font-bold">{task.skill || task.name}</span>
                        <div className="mt-2 text-white/40 break-all whitespace-pre-wrap">
@@ -170,7 +170,7 @@ function TaskRow({ task: initialTask, onCancel }: { task: TaskItem; onCancel: (i
 
                   {/* Result/Error */}
                   <div>
-                    <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">Execution Outcome</h4>
+                    <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">Result</h4>
                     {task.error ? (
                       <div className="bg-red-500/5 rounded-xl p-4 border border-red-500/10 text-[var(--error)] text-xs font-mono">
                          {task.error}
@@ -269,7 +269,7 @@ export default function Tasks() {
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Tasks</h2>
-          <p className="text-sm text-[var(--text-muted)]">Autonomous work items scheduled for execution</p>
+          <p className="text-sm text-[var(--text-muted)]">Run a prompt now or schedule it for later.</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -277,7 +277,7 @@ export default function Tasks() {
             className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-[var(--accent)] text-black shadow-lg shadow-[var(--accent-glow)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
           >
             <Plus size={16} />
-            Dispatch New Task
+            New task
           </button>
           <button
             onClick={load}
@@ -311,9 +311,9 @@ export default function Tasks() {
         ) : tasks.length === 0 ? (
           <EmptyState 
             icon={ListTodo}
-            title="Task Queue Clear"
-            description="No autonomous work items are currently scheduled. Tasks appear here when the agent identifies background work or you manually dispatch a mission."
-            actionLabel="Dispatch New Task"
+            title="No tasks yet"
+            description="Create a task to run a prompt now or on a schedule."
+            actionLabel="New task"
             onAction={() => setShowNewTask(true)}
           />
         ) : (
@@ -359,20 +359,20 @@ export default function Tasks() {
               className="relative w-full max-w-xl bg-[var(--bg-card)] border border-white/10 rounded-3xl shadow-2xl p-8 space-y-6 max-h-[90vh] overflow-y-auto"
             >
                <div>
-                 <h3 className="text-xl font-bold text-white">Dispatch New Task</h3>
+                 <h3 className="text-xl font-bold text-white">New task</h3>
                  <p className="text-xs text-[var(--text-muted)] mt-1">
                    Run something once, or schedule it to recur. The agent handles the task end-to-end with all tools available.
                  </p>
                </div>
                <form onSubmit={handleCreate} className="space-y-5">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Task Label</label>
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Task name</label>
                     <input name="name" placeholder="e.g. Morning Gmail digest" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors" />
                   </div>
 
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">
-                      Prompt for the Agent
+                      Prompt
                     </label>
                     <textarea
                       name="prompt"
@@ -382,7 +382,7 @@ export default function Tasks() {
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[var(--accent)]/40 transition-colors"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] pl-1">
-                      The agent executes this with its full toolset. Be specific about output channel (WhatsApp, email, log, …).
+                      Say what the agent should do and where to send the result.
                     </p>
                   </div>
 

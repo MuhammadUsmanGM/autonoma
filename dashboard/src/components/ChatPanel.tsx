@@ -228,7 +228,7 @@ export default function ChatPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()}
-            placeholder="Transmit command to Autonoma..."
+            placeholder="Write a message..."
             className="flex-1 bg-transparent border-none rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 outline-none"
           />
           <button

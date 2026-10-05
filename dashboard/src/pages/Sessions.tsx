@@ -63,7 +63,7 @@ export default function Sessions() {
       setMessages([])
       toast.success('Session history deleted')
     } catch {
-      toast.error('Purge command failed')
+      toast.error('Could not delete session history')
     }
   }
 

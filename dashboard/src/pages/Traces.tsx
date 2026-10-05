@@ -100,48 +100,33 @@ function TraceRow({ trace: initialTrace }: { trace: TraceItem }) {
             className="overflow-hidden bg-black/20"
           >
             <div className="px-5 pb-6 border-t border-[var(--border)]">
-              {/* Timeline Header */}
               <div className="flex items-center justify-between mt-6 mb-4">
-                  <div className="flex items-center gap-3">
-                    <h4 className="text-[10px] font-bold text-[var(--text)] uppercase tracking-widest">Processing Timeline</h4>
-                    {loading && <RefreshCw size={10} className="animate-spin text-[var(--text-muted)]" />}
-                  </div>
-                  <div className="flex items-center gap-4 text-[9px] text-[var(--text-faint)] font-bold uppercase tracking-tighter">
-                      <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-[var(--accent)]" /> Active Stage</div>
-                      <span>Total: {trace.elapsed_seconds.toFixed(3)}s</span>
-                  </div>
+                <div className="flex items-center gap-3">
+                  <h4 className="text-[10px] font-bold text-[var(--text)] uppercase tracking-widest">Steps</h4>
+                  {loading && <RefreshCw size={10} className="animate-spin text-[var(--text-muted)]" />}
+                </div>
+                <span className="text-[10px] text-[var(--text-faint)]">Total: {trace.elapsed_seconds.toFixed(2)}s</span>
               </div>
 
-              {/* Gantt Timeline */}
-              <div className="space-y-3">
-                {trace.spans.map((span, i) => {
-                   // Generate a guestimated width based on sequence if duration is missing
-                   const spanWidth = 100 / trace.spans.length 
-                   const spanStart = i * spanWidth
-
-                   return (
-                    <div key={i} className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)]">
-                            <span className="truncate max-w-[200px] text-[var(--text)] font-bold">{span.stage}</span>
-                            <span>{JSON.stringify(span.data).slice(0, 40)}...</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-[var(--bg-faint)] relative overflow-hidden group/span">
-                            <motion.div 
-                              initial={{ left: '-10%', width: 0 }}
-                               animate={{ left: `${spanStart}%`, width: `${spanWidth}%` }}
-                              className="absolute inset-y-0 bg-[var(--accent)] opacity-60 group-hover/span:opacity-100 transition-opacity rounded-full shadow-[0_0_10px_var(--accent-glow)]"
-                            />
-                        </div>
+              <ol className="space-y-2">
+                {trace.spans.map((span, i) => (
+                  <li key={i} className="flex items-start gap-3 rounded-lg bg-[var(--bg-faint)] px-3 py-2">
+                    <span className="text-[10px] text-[var(--text-faint)]">{i + 1}.</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-[var(--text)]">{span.stage}</p>
+                      <p className="mt-1 truncate text-[10px] font-mono text-[var(--text-muted)]">
+                        {JSON.stringify(span.data)}
+                      </p>
                     </div>
-                   )
-                })}
-              </div>
+                  </li>
+                ))}
+              </ol>
 
               {/* Tool calls */}
               {trace.tool_calls.length > 0 && (
                 <div className="mt-8">
                   <h4 className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-3">
-                    External Integrations ({trace.tool_calls.length})
+                    Tools used ({trace.tool_calls.length})
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {trace.tool_calls.map((tc, i) => (
@@ -211,15 +196,15 @@ export default function Traces() {
     <div className="p-10 space-y-8">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Traces</h2>
-          <p className="text-sm text-[var(--text-muted)]">Real-time pipeline visualization and performance audit</p>
+          <h2 className="text-2xl font-semibold text-[var(--text)] mb-2">Agent runs</h2>
+          <p className="text-sm text-[var(--text-muted)]">See what the agent did and how long each run took.</p>
         </div>
         <button
           onClick={load}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Sync Traces
+          Refresh
         </button>
       </header>
 
@@ -244,8 +229,8 @@ export default function Traces() {
       ) : traces.length === 0 ? (
         <div className="text-center py-20 reflective rounded-2xl">
           <Activity size={32} className="mx-auto mb-4 text-white/10" />
-          <p className="text-sm text-white/30 font-medium uppercase tracking-widest">No traces found</p>
-          <p className="text-xs text-white/15 mt-1 font-mono italic">Traces will appear after the agent processes messages.</p>
+          <p className="text-sm text-white/30 font-medium">No agent runs yet</p>
+          <p className="text-xs text-white/40 mt-1">Runs will appear after the agent handles a message.</p>
         </div>
       ) : (
         <div className="space-y-3">

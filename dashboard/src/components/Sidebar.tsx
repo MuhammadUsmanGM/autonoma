@@ -6,14 +6,40 @@ import type { Page } from '../types'
 import { useState } from 'react'
 import { X } from 'lucide-react'
 
-const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard }[] = [
-  { page: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { page: 'chat', label: 'Chat', icon: MessageSquare },
-  { page: 'memory', label: 'Memory', icon: Brain },
-  { page: 'sessions', label: 'Sessions', icon: History },
-  { page: 'traces', label: 'Traces', icon: Activity },
-  { page: 'webhooks', label: 'Webhooks', icon: Webhook },
-  { page: 'tasks', label: 'Tasks', icon: ListTodo },
+const NAV_GROUPS: { label: string; items: { page: Page; label: string; icon: typeof LayoutDashboard }[] }[] = [
+  {
+    label: 'Workspace',
+    items: [
+      { page: 'overview', label: 'Overview', icon: LayoutDashboard },
+      { page: 'chat', label: 'Chat', icon: MessageSquare },
+      { page: 'memory', label: 'Memory', icon: Brain },
+      { page: 'sessions', label: 'Sessions', icon: History },
+      { page: 'tasks', label: 'Tasks', icon: ListTodo },
+    ],
+  },
+  {
+    label: 'Connections',
+    items: [
+      { page: 'channels', label: 'Channels', icon: Globe },
+      { page: 'connectors', label: 'Integrations', icon: Plug },
+      { page: 'contacts', label: 'Contacts', icon: Users },
+    ],
+  },
+  {
+    label: 'Activity',
+    items: [
+      { page: 'traces', label: 'Agent runs', icon: Activity },
+      { page: 'webhooks', label: 'Webhook history', icon: Webhook },
+      { page: 'logs', label: 'Log history', icon: Terminal },
+    ],
+  },
+  {
+    label: 'Settings',
+    items: [
+      { page: 'soul', label: 'Identity', icon: Sparkles },
+      { page: 'settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ]
 
 import ThemeToggle from './ThemeToggle'
@@ -72,167 +98,34 @@ export default function Sidebar({ current, onChange, onToggleAlerts, mobileOpen,
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-1 custom-scrollbar">
-        <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">Workspace</p>
-        {NAV_ITEMS.map(({ page, label, icon: Icon }) => {
-          const active = current === page
-          return (
-            <button
-              key={page}
-              onClick={() => onChange(page)}
-                className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group cursor-pointer ${
-                active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-              }`}
-            >
-              {active && (
-                <motion.div
-                  layoutId="active-nav"
-                  className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/20 rounded-lg"
-                />
-              )}
-              <Icon size={17} className="relative z-10" />
-              <span className="relative z-10">{label}</span>
-            </button>
-          )
-        })}
-
-        {/* Divider */}
-        <div className="!my-5 mx-2 border-t border-[var(--border)]" />
-
-        {/* Settings and integrations */}
-        <div className="space-y-1.5">
-          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">Connections & settings</p>
-          {(() => {
-            const active = current === 'soul'
-            return (
-              <button
-                onClick={() => onChange('soul')}
-                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="active-nav"
-                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Sparkles size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="relative z-10">Identity</span>
-              </button>
-            )
-          })()}
-          
-          {(() => {
-            const active = current === 'channels'
-            return (
-              <button
-                onClick={() => onChange('channels')}
-                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="active-nav"
-                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Globe size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="relative z-10">Channels</span>
-              </button>
-            )
-          })()}
-          
-          {(() => {
-            const active = current === 'connectors'
-            return (
-              <button
-                onClick={() => onChange('connectors')}
-                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="active-nav"
-                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Plug size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="relative z-10">Connectors</span>
-              </button>
-            )
-          })()}
-
-          {(() => {
-            const active = current === 'contacts'
-            return (
-              <button
-                onClick={() => onChange('contacts')}
-                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="active-nav"
-                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Users size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="relative z-10">Contacts</span>
-              </button>
-            )
-          })()}
-
-          {(() => {
-            const active = current === 'logs'
-            return (
-              <button
-                onClick={() => onChange('logs')}
-                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="active-nav"
-                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Terminal size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="relative z-10">Logs</span>
-              </button>
-            )
-          })()}
-          
-          {(() => {
-            const active = current === 'settings'
-            return (
-              <button
-                onClick={() => onChange('settings')}
-                className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="active-nav"
-                    className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/10 rounded-xl"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Settings size={18} className={`relative z-10 ${active ? 'text-[var(--accent)]' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="relative z-10">Settings</span>
-              </button>
-            )
-          })()}
-        </div>
+        {NAV_GROUPS.map(({ label, items }, groupIndex) => (
+          <div key={label} className={groupIndex > 0 ? 'mt-5 border-t border-[var(--border)] pt-4' : ''}>
+            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{label}</p>
+            <div className="space-y-1">
+              {items.map(({ page, label: itemLabel, icon: Icon }) => {
+                const active = current === page
+                return (
+                  <button
+                    key={page}
+                    onClick={() => onChange(page)}
+                    className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                      active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    {active && (
+                      <motion.div
+                        layoutId="active-nav"
+                        className="absolute inset-0 bg-[var(--accent-dim)] border border-[var(--accent)]/20 rounded-lg"
+                      />
+                    )}
+                    <Icon size={17} className="relative z-10" />
+                    <span className="relative z-10">{itemLabel}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Footer */}

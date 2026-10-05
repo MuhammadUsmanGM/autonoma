@@ -24,6 +24,21 @@ function App() {
   const [page, setPage] = useState<Page>('overview')
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const pageTitles: Record<Page, string> = {
+    overview: 'Overview',
+    chat: 'Chat',
+    memory: 'Memory',
+    sessions: 'Sessions',
+    traces: 'Agent runs',
+    settings: 'Settings',
+    tasks: 'Tasks',
+    webhooks: 'Webhook history',
+    soul: 'Identity',
+    channels: 'Channels',
+    connectors: 'Integrations',
+    contacts: 'Contacts',
+    logs: 'Log history',
+  }
 
   return (
     <NotificationsProvider>
@@ -46,7 +61,7 @@ function App() {
             >
               <Menu size={20} />
             </button>
-            <span className="text-sm font-semibold">{page.charAt(0).toUpperCase() + page.slice(1)}</span>
+            <span className="text-sm font-semibold">{pageTitles[page]}</span>
           </div>
           <AnimatePresence mode="wait">
             <motion.div

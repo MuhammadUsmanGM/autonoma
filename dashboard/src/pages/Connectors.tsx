@@ -86,8 +86,8 @@ export default function Connectors() {
       <div className="p-8">
         <EmptyState
           icon={Plug}
-          title="No connectors registered"
-          description="Add OAuth client credentials (Google, GitHub, OneDrive) in your .env to enable connectors."
+          title="No integrations available"
+          description="Add Google, GitHub, or OneDrive sign-in details in your .env to connect these services."
         />
       </div>
     )
@@ -98,10 +98,10 @@ export default function Connectors() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Plug size={22} className="text-[var(--accent)]" /> Connectors
+            <Plug size={22} className="text-[var(--accent)]" /> Integrations
           </h1>
           <p className="text-sm text-[var(--text-muted)] mt-1">
-            Sign Autonoma into third-party services. One account per connector at a time.
+            Connect Autonoma to services like Google, OneDrive, and GitHub.
           </p>
         </div>
         <button

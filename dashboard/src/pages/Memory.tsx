@@ -10,6 +10,14 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import EmptyState from '../components/EmptyState'
 
 const TYPES = ['all', 'remember', 'fact', 'preference', 'conversation_summary', 'maintenance']
+const TYPE_LABELS: Record<string, string> = {
+  all: 'All',
+  remember: 'Remembered',
+  fact: 'Facts',
+  preference: 'Preferences',
+  conversation_summary: 'Summaries',
+  maintenance: 'Needs review',
+}
 
 export default function MemoryPage() {
   const [memories, setMemories] = useState<Memory[]>([])
@@ -81,13 +89,13 @@ export default function MemoryPage() {
       setStale((prev) => prev.filter((m) => m.id !== id))
       setSelectedIds((prev) => prev.filter(i => i !== id))
       if (action === 'review') {
-        toast.success('Memory marked as important')
+        toast.success('Memory marked as reviewed')
         load() 
       } else {
-        toast.success('Information discarded')
+        toast.success('Memory removed')
       }
     } catch {
-      toast.error('Maintenance command failed')
+      toast.error('Could not update memory')
     }
   }
 
@@ -213,7 +221,7 @@ export default function MemoryPage() {
                   />
                 )}
                 <span className="relative z-10">
-                  {t === 'all' ? 'Universal' : t.replace('_', ' ')}
+                  {TYPE_LABELS[t] || t}
                   {count !== undefined && count > 0 && (
                     <span className={`ml-2 px-1.5 py-0.5 rounded-full text-[9px] ${active ? 'bg-black/20' : 'bg-[var(--accent)]/20 text-[var(--accent)]'}`}>
                       {count}
@@ -252,7 +260,7 @@ export default function MemoryPage() {
                       readOnly
                       className="w-3.5 h-3.5 rounded border-white/10 bg-black/40 accent-[var(--accent)]"
                     />
-                    <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest">Decaying node</span>
+                    <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest">Needs review</span>
                   </div>
                   <span className="text-[10px] text-[var(--text-muted)]">ID: #{m.id}</span>
                 </div>
@@ -268,7 +276,7 @@ export default function MemoryPage() {
                     onClick={() => handleReview(m.id, 'review')}
                     className="px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-[var(--accent)] text-black hover:scale-105 active:scale-95 transition-all"
                   >
-                    Reinforce
+                    Mark reviewed
                   </button>
                 </div>
               </motion.div>
@@ -291,7 +299,7 @@ export default function MemoryPage() {
           className="rounded-3xl reflective overflow-hidden shadow-2xl"
         >
           <div className="p-6 border-b border-[var(--border)] bg-[var(--bg-faint)] flex items-center justify-between">
-            <span className="text-xs font-bold text-[var(--text)] uppercase tracking-widest">Memory Matrix</span>
+            <span className="text-xs font-bold text-[var(--text)] uppercase tracking-widest">Saved memories</span>
             <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight">{filtered.length} memories</span>
           </div>
           <MemoryTable 
