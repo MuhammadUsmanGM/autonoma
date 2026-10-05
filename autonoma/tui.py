@@ -63,8 +63,9 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from autonoma.config import load_config, save_yaml_config
+from autonoma.config import LLMConfig, load_config, save_yaml_config
 from autonoma.models.catalog import PROVIDER_SPECS, ProviderSpec
+from autonoma.models import verify_model
 from autonoma.runtime import AgentRunner, LogRingBuffer, install_logging
 from autonoma.splash import AutonomaSplash
 
@@ -752,9 +753,9 @@ class MainScreen(BaseScreen):
 
     MENU: list[tuple[str, str]] = [
         ("logs", "Live logs"),
-        ("config", "Manage configuration"),
-        ("channels", "Manage channels"),
-        ("connectors", "Manage connectors"),
+        ("config", "Change AI provider or model"),
+        ("channels", "Connect messaging apps"),
+        ("connectors", "Connect accounts"),
         ("dashboard", "Open web dashboard"),
         ("status", "Check status"),
         ("restart", "Restart Autonoma"),
@@ -987,7 +988,7 @@ class StatusScreen(BackScreen):
         rows.add_column(style="dim", min_width=11)
         rows.add_column()
         rows.add_row("Name", cfg.name)
-        rows.add_row("Provider", cfg.llm.provider)
+        rows.add_row("Provider", cfg.llm.provider_name or cfg.llm.provider)
         rows.add_row("Model", cfg.llm.model)
         rows.add_row(
             "API key",
@@ -1398,8 +1399,9 @@ class ConnectorsScreen(BackScreen):
             return
         if not entries:
             self._note(
-                "[yellow]No connectors are registered. Set GOOGLE_CLIENT_ID / "
-                "MS_CLIENT_ID (and matching secrets) in your .env.[/]"
+                "[yellow]No account connections are set up yet. Add the "
+                "service client ID and secret to .env (see README: Connect "
+                "accounts), then try again.[/]"
             )
             return
         self._entries = entries
@@ -1489,7 +1491,7 @@ class ConnectorsScreen(BackScreen):
 
 
 class SetupWizardScreen(BaseScreen):
-    """Three steps: provider → API key → model.
+    """Guided setup for built-in and OpenAI-compatible custom providers.
 
     All three steps are composed up front and toggled with ``display`` — no
     mount/unmount mid-navigation, so focus and layout stay predictable.
@@ -1505,6 +1507,8 @@ class SetupWizardScreen(BaseScreen):
         self.provider = ""
         self.api_key = ""
         self.model = ""
+        self.provider_name = ""
+        self.base_url = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -1517,22 +1521,31 @@ class SetupWizardScreen(BaseScreen):
                 classes="step",
             ),
             Vertical(
+                Label("Name shown in Autonoma"),
+                Input(placeholder="e.g. My company AI", id="provider-name"),
+                Label("OpenAI-compatible API base URL"),
+                Input(placeholder="https://ai.example.com/v1", id="base-url"),
+                id="custom-provider",
+                classes="step",
+            ),
+            Vertical(
                 Label("Will be saved to .env", id="key-label"),
                 Input(placeholder="API key (hidden)", password=True, id="api-key"),
-                id="step2",
+                id="step-key",
                 classes="step",
             ),
             Vertical(
                 OptionList(id="models"),
+                Static(id="model-note"),
                 Vertical(
-                    Label("Model identifier:"),
+                    Label("Or enter a model ID:"),
                     Input(
-                        placeholder="e.g. nvidia/llama-3.1-nemotron-nano-8b-v1:free",
+                        placeholder="e.g. claude-sonnet-4-6 or provider/model-name",
                         id="model-id",
                     ),
                     id="custom-wrap",
                 ),
-                id="step3",
+                id="step-model",
                 classes="step",
             ),
             id="wiz-body",
@@ -1561,23 +1574,41 @@ class SetupWizardScreen(BaseScreen):
 
     def _show_step(self, step: int) -> None:
         self.step = step
-        titles = {1: "LLM provider", 2: "API key", 3: "Model"}
+        custom = self.provider == "custom"
+        key_step = 3 if custom else 2
+        model_step = 4 if custom else 3
+        titles = {
+            1: "AI provider",
+            2: "Provider details" if custom else "API key",
+            key_step: "API key",
+            model_step: "Model",
+        }
         self.query_one("#wiz-head", Static).update(
-            f"[bold]Setup — step {step} of 3 · {titles[step]}[/]"
+            f"[bold]Setup — step {step} of {model_step} · {titles[step]}[/]"
         )
         self.query_one("#providers", OptionList).display = step == 1
-        self.query_one("#step2", Vertical).display = step == 2
-        self.query_one("#step3", Vertical).display = step == 3
+        self.query_one("#custom-provider", Vertical).display = custom and step == 2
+        self.query_one("#step-key", Vertical).display = step == key_step
+        self.query_one("#step-model", Vertical).display = step == model_step
         self.query_one("#custom-wrap", Vertical).display = False
 
         if step == 1:
             self.query_one("#wiz-hint", Static).update(
-                "[dim]↑/↓ choose a provider · enter select · esc "
+                "[dim]Choose an AI service, or add a custom compatible service. "
+                "↑/↓ select · enter continue · esc "
                 + ("quit" if self.forced else "cancel")
                 + "[/]"
             )
             self.query_one("#providers", OptionList).focus()
-        elif step == 2:
+        elif custom and step == 2:
+            self.query_one("#provider-name", Input).value = self.provider_name
+            self.query_one("#base-url", Input).value = self.base_url
+            self.query_one("#wiz-hint", Static).update(
+                "[dim]Use the base URL for an OpenAI-compatible API. "
+                "Press Tab to move between fields, then Enter.[/]"
+            )
+            self.query_one("#provider-name", Input).focus()
+        elif step == key_step:
             assert self.spec is not None
             self.query_one("#key-label", Label).update(
                 f"Will be saved to .env as [bold]{self.spec.env_key}[/]"
@@ -1585,16 +1616,18 @@ class SetupWizardScreen(BaseScreen):
             key_input = self.query_one("#api-key", Input)
             key_input.value = self.api_key
             self.query_one("#wiz-hint", Static).update(
-                "[dim]enter to continue"
+                "[dim]Enter your provider API key. A short request will later "
+                "check that the key and model work; your provider may charge "
+                "a small amount. Enter to continue"
                 + ("" if self.forced else " · enter empty to skip")
                 + " · esc back[/]"
             )
             key_input.focus()
-        else:
+        elif step == model_step:
             models = self.query_one("#models", OptionList)
             models.clear_options()
             labels = list(self.spec.models if self.spec else []) + [
-                "Custom (type your own)"
+                "Enter a different model ID"
             ]
             models.add_options(
                 Option(label, id=str(i)) for i, label in enumerate(labels)
@@ -1603,7 +1636,12 @@ class SetupWizardScreen(BaseScreen):
             # Enter a no-op until the user moved the cursor.
             models.highlighted = 0
             self.query_one("#wiz-hint", Static).update(
-                "[dim]↑/↓ choose a model · enter select · esc back[/]"
+                "[dim]Choose a suggested model or enter its ID below. "
+                "Autonoma will check that it works before saving. "
+                "↑/↓ select · enter choose · esc back[/]"
+            )
+            self.query_one("#model-note", Static).update(
+                "Suggestions are common models; availability depends on your account."
             )
             models.focus()
 
@@ -1620,7 +1658,41 @@ class SetupWizardScreen(BaseScreen):
             return
         self.spec = spec
         self.provider = spec.key
-        self._show_step(2)
+        self.api_key = os.getenv(spec.env_key, "")
+        if self.provider == "custom":
+            cfg = self.tui.ws.load()
+            if cfg and cfg.llm.provider == "custom":
+                self.provider_name = cfg.llm.provider_name
+                self.base_url = cfg.llm.base_url
+            self._show_step(2)
+        else:
+            self.provider_name = ""
+            self.base_url = ""
+            self._show_step(2)
+
+    @on(Input.Submitted, "#provider-name")
+    def _provider_name_submitted(self, event: Input.Submitted) -> None:
+        self.provider_name = event.value.strip()
+        self.query_one("#base-url", Input).focus()
+
+    @on(Input.Submitted, "#base-url")
+    def _custom_details_submitted(self, event: Input.Submitted) -> None:
+        self.base_url = event.value.strip().rstrip("/")
+        parts = urllib.parse.urlsplit(self.base_url)
+        if not self.provider_name:
+            self._error("Enter a name for this provider.")
+            self.query_one("#provider-name", Input).focus()
+            return
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.netloc
+            or parts.username is not None
+            or parts.password is not None
+        ):
+            self._error("Enter a valid http:// or https:// API base URL.")
+            self.query_one("#base-url", Input).focus()
+            return
+        self._show_step(3)
 
     @on(Input.Submitted, "#api-key")
     def _submit_key(self, event: Input.Submitted) -> None:
@@ -1630,7 +1702,7 @@ class SetupWizardScreen(BaseScreen):
             self.query_one("#api-key", Input).focus()
             return
         self.api_key = value
-        self._show_step(3)
+        self._show_step(4 if self.provider == "custom" else 3)
 
     @on(OptionList.OptionSelected, "#models")
     def _pick_model(self, event: OptionList.OptionSelected) -> None:
@@ -1666,18 +1738,52 @@ class SetupWizardScreen(BaseScreen):
     @work(exclusive=True, group="wizard")
     async def _save_flow(self) -> None:
         ws = self.tui.ws
+        self.query_one("#wiz-hint", Static).update(
+            "[yellow]Checking the API key and selected model…[/]"
+        )
+        try:
+            await verify_model(LLMConfig(
+                provider=self.provider,
+                api_key=self.api_key,
+                model=self.model,
+                provider_name=self.provider_name,
+                base_url=self.base_url,
+            ))
+        except Exception as exc:
+            self._show_step(4 if self.provider == "custom" else 3)
+            self._error(
+                f"Could not use this model. Check the API key, model ID, or "
+                f"base URL, then try again. ({str(exc)[:180]})"
+            )
+            return
+
         ws.set_env("AUTONOMA_LLM_PROVIDER", self.provider)
         ws.set_env("AUTONOMA_LLM_MODEL", self.model)
         if self.api_key and self.spec is not None:
             ws.set_env(self.spec.env_key, self.api_key)
+        if self.provider == "custom":
+            ws.set_env("AUTONOMA_LLM_PROVIDER_NAME", self.provider_name)
+            ws.set_env("AUTONOMA_LLM_BASE_URL", self.base_url)
+        else:
+            ws.disable_env("AUTONOMA_LLM_API_KEY")
+            ws.disable_env("AUTONOMA_LLM_PROVIDER_NAME")
+            ws.disable_env("AUTONOMA_LLM_BASE_URL")
         save_yaml_config(
-            ws.yaml_path, {"llm": {"provider": self.provider, "model": self.model}}
+            ws.yaml_path,
+            {"llm": {
+                "provider": self.provider,
+                "model": self.model,
+                "provider_name": self.provider_name,
+                "base_url": self.base_url,
+            }},
         )
         ws.invalidate()
 
         await self.ask(
             "Setup complete",
-            f"Provider: [bold]{self.provider}[/]\nModel: [bold]{self.model}[/]",
+            f"Provider: [bold]{self.provider_name or self.provider}[/]\n"
+            f"Model: [bold]{self.model}[/]\n\n"
+            "Next: choose Connect messaging apps or Connect accounts from the menu.",
         )
         if self.forced:
             self.tui.enter_main()

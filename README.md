@@ -26,7 +26,12 @@ autonoma
 ```
 
 The first launch opens a setup guide. Choose an AI provider, enter its API
-key, and select a model. Autonoma saves these settings for you.
+key, and select a model. Autonoma checks that the key and model work before
+saving. This sends one short request to your provider, which may charge a
+small amount.
+
+You can also choose **Custom provider** for an OpenAI-compatible service. Enter
+its name, API key, model ID, and API base URL.
 
 Supported providers: OpenRouter, Anthropic, Google Gemini, OpenAI, Groq, and
 Mistral.
@@ -60,6 +65,10 @@ Autonoma also opens a terminal control panel. Use the arrow keys to move,
 **Enter** to select, and **Esc** to go back. From there, you can view status and
 logs, manage messaging apps, open the dashboard, or restart Autonoma.
 
+After setup, choose **Connect messaging apps** to add Telegram, Discord,
+WhatsApp, Gmail, or the REST API. Choose **Connect accounts** to sign in to
+Google, Microsoft, or GitHub services.
+
 ## Connect messaging apps
 
 You can enter credentials in the terminal panel or set them in a `.env` file.
@@ -85,8 +94,10 @@ You can enter credentials in the terminal panel or set them in a `.env` file.
 ## Connect accounts
 
 To let Autonoma work with other services, add the service's OAuth credentials
-to `.env` or `autonoma.yaml`, then sign in from the dashboard's **Integrations**
-page or the terminal panel.
+to `.env`, then sign in from the dashboard's **Integrations** page or the
+terminal panel. Google services share `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET`; Microsoft uses `MS_CLIENT_ID` and `MS_CLIENT_SECRET`;
+GitHub uses `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
 
 Available connections include:
 

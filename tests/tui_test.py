@@ -259,34 +259,34 @@ class WizardTest(unittest.TestCase):
             app = AutonomaTUI()
             # A test must never boot the real agent.
             app.ensure_agent = lambda: None  # type: ignore[method-assign]
-            async with app.run_test(size=(100, 40)) as pilot:
-                await pilot.pause()
-                self.assertIsInstance(pilot.app.screen, SetupWizardScreen)
+            with mock.patch("autonoma.tui.verify_model", new=mock.AsyncMock()):
+                async with app.run_test(size=(100, 40)) as pilot:
+                    await pilot.pause()
+                    self.assertIsInstance(pilot.app.screen, SetupWizardScreen)
 
-                # Step 1: provider (first entry = openrouter).
-                await pilot.press("enter")
-                await pilot.pause()
+                    # Step 1: provider (first entry = OpenRouter).
+                    await pilot.press("enter")
+                    await pilot.pause()
 
-                # Step 2: API key.
-                await pilot.press(*"sktestkey123", "enter")
-                await pilot.pause()
+                    # Step 2: API key.
+                    await pilot.press(*"sktestkey123", "enter")
+                    await pilot.pause()
 
-                # Step 3: model — first suggestion.
-                await pilot.press("enter")
-                await pilot.pause(0.3)
+                    # Step 3: choose the first suggested model.
+                    await pilot.press("enter")
+                    await pilot.pause(0.3)
 
-                self.assertIsInstance(pilot.app.screen, Dialog)
-                await pilot.press("enter")
-                await pilot.pause(0.3)
+                    self.assertIsInstance(pilot.app.screen, Dialog)
+                    await pilot.press("enter")
+                    await pilot.pause(0.3)
 
-                # Wizard popped, control tower revealed.
-                self.assertIsInstance(pilot.app.screen, MainScreen)
-                self.assertTrue(pilot.app.entered_main_loop)
+                    self.assertIsInstance(pilot.app.screen, MainScreen)
+                    self.assertTrue(pilot.app.entered_main_loop)
 
-                content = _ENV_PATH.read_text(encoding="utf-8")
-                self.assertIn("AUTONOMA_LLM_PROVIDER=", content)
-                self.assertIn("AUTONOMA_LLM_MODEL=", content)
-                self.assertIn("OPENROUTER_API_KEY=", content)
+                    content = _ENV_PATH.read_text(encoding="utf-8")
+                    self.assertIn("AUTONOMA_LLM_PROVIDER=", content)
+                    self.assertIn("AUTONOMA_LLM_MODEL=", content)
+                    self.assertIn("OPENROUTER_API_KEY=", content)
 
         _run(scenario())
 

@@ -17,6 +17,8 @@ class LLMConfig:
     provider: str = "anthropic"
     api_key: str = ""
     model: str = "claude-sonnet-4-6"
+    provider_name: str = ""
+    base_url: str = ""
 
 
 @dataclass
@@ -395,6 +397,11 @@ def load_config(config_path: str | None = None) -> Config:
     )
     if api_key:
         config.llm.api_key = api_key
+
+    if base_url := os.getenv("AUTONOMA_LLM_BASE_URL"):
+        config.llm.base_url = base_url
+    if provider_name := os.getenv("AUTONOMA_LLM_PROVIDER_NAME"):
+        config.llm.provider_name = provider_name
 
     # Override LLM provider/model from environment
     if provider := os.getenv("AUTONOMA_LLM_PROVIDER"):
