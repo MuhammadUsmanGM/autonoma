@@ -40,6 +40,8 @@ def create_provider(config: LLMConfig) -> LLMProvider:
         "openai": ("https://api.openai.com/v1", "openai"),
         "groq": ("https://api.groq.com/openai/v1", "groq"),
         "mistral": ("https://api.mistral.ai/v1", "mistral"),
+        # DeepSeek documents base_url `https://api.deepseek.com` (OpenAI format).
+        "deepseek": ("https://api.deepseek.com", "deepseek"),
     }
     if config.provider in compatible:
         from autonoma.models.compatible import CompatibleProvider
@@ -65,8 +67,17 @@ async def verify_model(config: LLMConfig) -> None:
             max_tokens=1,
         )
     finally:
+        # Close whatever resource the provider exposes: a provider-level
+        # aclose/close first (it owns its own lifecycle), else the HTTP
+        # client it was built with.
         client = getattr(provider, "_client", None)
-        close = getattr(client, "aclose", None) or getattr(client, "close", None)
+        candidates = (
+            getattr(provider, "aclose", None),
+            getattr(provider, "close", None),
+            getattr(client, "aclose", None),
+            getattr(client, "close", None),
+        )
+        close = next((fn for fn in candidates if callable(fn)), None)
         if close is not None:
             result = close()
             if inspect.isawaitable(result):

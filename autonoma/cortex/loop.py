@@ -531,7 +531,7 @@ class AgentLoop:
 
     def _observe(self, trace: dict, stage: str, data: dict) -> None:
         """Stage 8: Emit trace event (logged in Phase 1)."""
-        trace["stages"][stage] = data
+        trace.setdefault("stages", {})[stage] = data
         # Also populate the structured live trace if available
         live_trace = self._current_live_trace.get()
         if live_trace:

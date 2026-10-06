@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **DeepSeek provider.** A seventh built-in provider in the setup wizard,
+  `.env.example` / `autonoma.yaml` docs and the dashboard Settings page,
+  wired through `create_provider` (`https://api.deepseek.com`, OpenAI
+  format) and `DEEPSEEK_API_KEY`.
+- `textual>=8.0,<9.0` as a runtime dependency, and `tests/tui_test.py`
+  driving the real widget tree through Textual's headless pilot (menu
+  navigation, logs, status, channels, wizard save, splash variants).
+
 ### Changed
+- **Model lists refreshed (Oct 2026), newest/best first.** GPT‑6 Astra /
+  6.1 Sol / 5.6, Claude Opus 5.5, Sonnet 5.5 and Fable 5.1, Gemini 3.8/3.5,
+  Groq's GPT‑OSS and Qwen3.6 lineup, Mistral's current aliases and
+  OpenRouter's flagships. Retired suggestions (Gemini 2.0/1.5, GPT‑4o, o3,
+  `deepseek-chat`) are gone; users can still type any custom model ID.
+  DeepSeek lists the four names its API actually serves — it publishes only
+  four — so `test_builtin_providers_offer_more_model_choices` keeps its
+  six-model floor for every other provider and expects four there.
+- **Key labels read as `Ctrl+C`, not `^c`.** `AutonomaTUI.get_key_display`
+  renders modifiers and named keys as words/arrows (`Esc`, `↑`, `Shift+Tab`),
+  so the footer and the keys panel drop Textual's caret shorthand.
+- **The bottom bar carries real buttons.** Footers show `↑ Up`, `↓ Down` and
+  `Enter Select` on every list screen, and `Esc Back` on the wizard, logs,
+  channels, connectors and status screens, next to `Ctrl+C Quit` and the
+  palette key. (Escape stays a deliberate no-op on the main screen — it is
+  the root of the stack.)
+- **The keys panel is prominent.** Panel background, accent border and
+  brighter key/header colours make it read as a real panel instead of a
+  transparent strip.
 - **TUI rebuilt on Textual.** The interactive TUI was a hand-rolled loop:
   raw-mode `termios`/`msvcrt` key reading, `atexit` guards to restore the
   terminal, a `_drain_stdin()` that had to swallow orphaned bytes after every
@@ -39,15 +67,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   viewer, the workspace log file and the dashboard's Logs page only.
 
 ### Fixed
+- **`verify_model` now closes a provider that owns its lifecycle.** It only
+  ever looked at `provider._client`, so a provider exposing its own
+  `aclose`/`close` was left open after the key check. The provider's own
+  method is used first, falling back to the underlying HTTP client.
+- **`AgentLoop._observe` no longer assumes the trace already has `stages`.**
+  A missing key raised `KeyError` instead of recording the stage; it now
+  seeds `trace["stages"]` on first use (production always passes a
+  pre-built one, so behaviour there is unchanged).
+- **The keys panel can be closed from inside it.** The palette's "Keys"
+  command only toggled it open; the panel now mounts a Close button that
+  calls `action_hide_help_panel`, and the palette still flips to "hide".
+- **Maximize no longer leaves a hatched backdrop.** Textual's
+  `Screen.-maximized-view` draws `hatch: right $panel` behind the maximized
+  widget; the app CSS now keeps the normal flat background.
 - **Workspace log file keeps recording after the agent starts.**
   `configure_root_logger` mistook the TUI's `FileHandler` for a console
   handler (it subclasses `StreamHandler`) and stripped it on every agent
   start, so the log file went silent while the agent ran.
-
-### Added
-- `textual>=8.0,<9.0` as a runtime dependency, and `tests/tui_test.py`
-  driving the real widget tree through Textual's headless pilot (menu
-  navigation, logs, status, channels, wizard save, splash variants).
 
 ## [1.0.4] - 2026-09-26
 

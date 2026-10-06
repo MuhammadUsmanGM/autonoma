@@ -387,6 +387,7 @@ def load_config(config_path: str | None = None) -> Config:
         "openai": "OPENAI_API_KEY",
         "groq": "GROQ_API_KEY",
         "mistral": "MISTRAL_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
     }
     selected_provider = os.getenv("AUTONOMA_LLM_PROVIDER", config.llm.provider).lower()
     api_key = (

@@ -16,39 +16,56 @@ const PROVIDERS = [
   { value: 'openai', label: 'OpenAI', desc: 'Direct GPT API' },
   { value: 'groq', label: 'Groq', desc: 'Fast open-model inference' },
   { value: 'mistral', label: 'Mistral', desc: 'Direct Mistral API' },
+  { value: 'deepseek', label: 'DeepSeek', desc: 'Cheap reasoning models' },
 ]
 
+// Newest / best first — mirrors autonoma/models/catalog.py. Users can still
+// type any model ID in the field below the dropdown.
 const MODEL_SUGGESTIONS: Record<string, { value: string; label: string }[]> = {
   openrouter: [
-    { value: 'anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 ($3.00 / 1M)' },
-    { value: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 ($0.25 / 1M)' },
-    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini ($0.15 / 1M)' },
-    { value: 'google/gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Free)' },
+    { value: 'anthropic/claude-opus-5.5', label: 'Claude Opus 5.5' },
+    { value: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' },
+    { value: 'openai/gpt-6-astra', label: 'GPT-6 Astra' },
+    { value: 'openai/gpt-6.1-sol', label: 'GPT-6.1 Sol' },
+    { value: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+    { value: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
   ],
   anthropic: [
-    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 ($3.00 / 1M)' },
-    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 ($0.25 / 1M)' },
-    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 ($15.00 / 1M)' },
+    { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+    { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+    { value: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
+    { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   google: [
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+    { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+    { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
     { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
   ],
   openai: [
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+    { value: 'gpt-6-astra', label: 'GPT-6 Astra' },
+    { value: 'gpt-6.1-sol', label: 'GPT-6.1 Sol' },
+    { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+    { value: 'gpt-5.5', label: 'GPT-5.5' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
   ],
   groq: [
+    { value: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B' },
+    { value: 'qwen/qwen3.6-27b', label: 'Qwen3.6 27B' },
     { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
     { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B' },
-    { value: 'openai/gpt-oss-120b', label: 'GPT OSS 120B' },
   ],
   mistral: [
+    { value: 'mistral-medium-latest', label: 'Mistral Medium' },
     { value: 'mistral-large-latest', label: 'Mistral Large' },
     { value: 'mistral-small-latest', label: 'Mistral Small' },
     { value: 'codestral-latest', label: 'Codestral' },
+  ],
+  deepseek: [
+    { value: 'deepseek-flash', label: 'DeepSeek V4.1 Flash' },
+    { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash (legacy alias)' },
+    { value: 'deepseek-v4-flash-vision-exp', label: 'V4 Flash Vision (legacy alias)' },
   ],
 }
 

@@ -533,6 +533,7 @@ def register_dashboard_routes(
                         "openai": "OPENAI_API_KEY",
                         "groq": "GROQ_API_KEY",
                         "mistral": "MISTRAL_API_KEY",
+                        "deepseek": "DEEPSEEK_API_KEY",
                     }
                     env_key = env_keys.get(provider, "AUTONOMA_LLM_API_KEY")
                     os.environ[env_key] = llm["api_key"]

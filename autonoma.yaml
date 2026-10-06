@@ -6,11 +6,11 @@ gateway:
   http_port: 8766     # REST API + webhooks
 
 llm:
-  # provider options: openrouter, anthropic, google, openai, groq, mistral
+  # provider options: openrouter, anthropic, google, openai, groq, mistral, deepseek
   provider: "openrouter"
   # api_key: loaded from env var (.env file) — see .env.example
-  # OpenRouter models: anthropic/claude-sonnet-4-6, openai/gpt-4o, google/gemini-2.0-flash-001
-  # Anthropic models: claude-sonnet-4-6, claude-haiku-4-5-20251001
+  # OpenRouter models: anthropic/claude-opus-5.5, openai/gpt-6-astra, google/gemini-3.1-pro-preview
+  # Anthropic models: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-4-5
   model: "anthropic/claude-sonnet-4-6"
 
 # Channels auto-enable when env vars are set (see .env.example).

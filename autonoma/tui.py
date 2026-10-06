@@ -55,6 +55,7 @@ from textual.widgets import (
     DataTable,
     Footer,
     Header,
+    HelpPanel,
     Input,
     Label,
     OptionList,
@@ -743,6 +744,83 @@ class BackScreen(BaseScreen):
         self.app.pop_screen()
 
 
+class MenuOptionList(OptionList):
+    """OptionList that advertises its arrow keys in the screen footer.
+
+    Textual ships those bindings with ``show=False``, and the focused
+    widget's binding shadows the screen's for the same key — so the hint
+    has to live on the widget itself to reach the footer.
+    """
+
+    BINDINGS = [
+        Binding("up", "cursor_up", "Up"),
+        Binding("down", "cursor_down", "Down"),
+        Binding("enter", "select", "Select"),
+        Binding("home", "first", "First", show=False),
+        Binding("end", "last", "Last", show=False),
+        Binding("pageup", "page_up", "Page Up", show=False),
+        Binding("pagedown", "page_down", "Page Down", show=False),
+    ]
+
+
+class MenuDataTable(DataTable):
+    """DataTable whose row navigation shows up in the footer."""
+
+    BINDINGS = [
+        Binding("enter", "select_cursor", "Select"),
+        Binding("up", "cursor_up", "Up"),
+        Binding("down", "cursor_down", "Down"),
+        Binding("right", "cursor_right", "Right", show=False),
+        Binding("left", "cursor_left", "Left", show=False),
+        Binding("pageup", "page_up", "Page up", show=False),
+        Binding("pagedown", "page_down", "Page down", show=False),
+        Binding("ctrl+home", "scroll_top", "Top", show=False),
+        Binding("ctrl+end", "scroll_bottom", "Bottom", show=False),
+        Binding("home", "scroll_home", "Home", show=False),
+        Binding("end", "scroll_end", "End", show=False),
+    ]
+
+
+class ScrollRichLog(RichLog):
+    """RichLog that advertises its arrow keys in the screen footer.
+
+    ``ScrollView`` ships those bindings with ``show=False``, and the focused
+    widget shadows the screen's binding for the same key.
+    """
+
+    BINDINGS = [
+        Binding("up", "scroll_up", "Up"),
+        Binding("down", "scroll_down", "Down"),
+        Binding("left", "scroll_left", "Scroll Left", show=False),
+        Binding("right", "scroll_right", "Scroll Right", show=False),
+        Binding("home", "scroll_home", "Home", show=False),
+        Binding("end", "scroll_end", "End", show=False),
+        Binding("pageup", "page_up", "Page Up", show=False),
+        Binding("pagedown", "page_down", "Page Down", show=False),
+        Binding("ctrl+pageup", "page_left", show=False),
+        Binding("ctrl+pagedown", "page_right", show=False),
+    ]
+
+
+class KeysPanel(HelpPanel):
+    """Textual's keys panel with an explicit Close button.
+
+    The palette's "Keys" command only toggles the panel open, which makes
+    it look like a one-way door.
+    """
+
+    DEFAULT_CSS = """
+    KeysPanel #keys-close {
+        width: 100%;
+        margin: 1 0;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield from super().compose()
+        yield Button("Close", id="keys-close")
+
+
 # --------------------------------------------------------------------------
 # Screens
 # --------------------------------------------------------------------------
@@ -766,7 +844,7 @@ class MainScreen(BaseScreen):
         yield Header()
         yield AutonomaSplash(reserved_rows=26, id="splash")
         yield Static(id="status")
-        yield OptionList(
+        yield MenuOptionList(
             *(Option(label, id=key) for key, label in self.MENU), id="menu"
         )
         yield Static("[dim]↑/↓ navigate · enter select · ctrl+c quit[/]", id="hint")
@@ -837,8 +915,8 @@ class LogsScreen(BaseScreen):
         Binding("q", "back", show=False),
         Binding("c", "clear", "Clear"),
         Binding("f", "toggle_follow", "Follow"),
-        Binding("up", "line_up", show=False),
-        Binding("down", "line_down", show=False),
+        Binding("up", "line_up", "Up"),
+        Binding("down", "line_down", "Down"),
         Binding("pageup", "page_up", show=False),
         Binding("pagedown", "page_down", show=False),
         Binding("home", "to_top", show=False),
@@ -852,7 +930,7 @@ class LogsScreen(BaseScreen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield RichLog(
+        yield ScrollRichLog(
             id="log",
             max_lines=5000,
             wrap=False,
@@ -1129,7 +1207,7 @@ class ChannelsScreen(BackScreen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("", id="ch-intro")
-        yield DataTable(id="ch-table")
+        yield MenuDataTable(id="ch-table")
         yield Static(
             "[dim]enter on a row for actions · esc back[/]", id="hint"
         )
@@ -1374,7 +1452,7 @@ class ConnectorsScreen(BackScreen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("", id="conn-intro")
-        yield OptionList(id="connectors")
+        yield MenuOptionList(id="connectors")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -1497,7 +1575,7 @@ class SetupWizardScreen(BaseScreen):
     mount/unmount mid-navigation, so focus and layout stay predictable.
     """
 
-    BINDINGS = [Binding("escape", "cancel", show=False)]
+    BINDINGS = [Binding("escape", "cancel", "Back")]
 
     def __init__(self, *, forced: bool = False) -> None:
         super().__init__()
@@ -1515,7 +1593,7 @@ class SetupWizardScreen(BaseScreen):
         yield AutonomaSplash(reserved_rows=14, id="splash")
         yield Static(id="wiz-head")
         yield Vertical(
-            OptionList(
+            MenuOptionList(
                 *(Option(f"{s.label}  —  {s.description}", id=s.key) for s in PROVIDER_SPECS),
                 id="providers",
                 classes="step",
@@ -1540,7 +1618,7 @@ class SetupWizardScreen(BaseScreen):
                 classes="step",
             ),
             Vertical(
-                OptionList(id="models"),
+                MenuOptionList(id="models"),
                 Static(id="model-note"),
                 Vertical(
                     Label("Or enter a model ID:"),
@@ -1990,9 +2068,84 @@ class AutonomaTUI(App[None]):
         Binding("ctrl+c", "quit", "Quit", priority=True),
     ]
 
+    # Human-friendly key labels. Textual's own defaults render `ctrl+c` as
+    # `^c` (and `caps_lock` as `caps_lock`), which reads like shorthand.
+    _KEY_LABELS: dict[str, str] = {
+        "escape": "Esc",
+        "enter": "Enter",
+        "tab": "Tab",
+        "space": "Space",
+        "backspace": "⌫",
+        "delete": "Del",
+        "up": "↑",
+        "down": "↓",
+        "left": "←",
+        "right": "→",
+        "pageup": "PgUp",
+        "pagedown": "PgDn",
+        "home": "Home",
+        "end": "End",
+        "ctrl": "Ctrl",
+        "shift": "Shift",
+        "alt": "Alt",
+        "meta": "Meta",
+        "super": "Super",
+    }
+
+    def get_key_display(self, binding: Binding) -> str:
+        """Render bound keys as ``Ctrl+C`` / ``Esc`` / ``↑`` (footer + keys panel)."""
+        if binding.key_display:
+            return binding.key_display
+        modifiers, key = binding.parse_key()
+        if not key:
+            label = "+"
+        elif key in self._KEY_LABELS:
+            label = self._KEY_LABELS[key]
+        elif len(key) > 1:
+            label = key.replace("_", " ").replace("-", " ").title()
+        else:
+            label = key
+        parts = [self._KEY_LABELS.get(mod, mod.title()) for mod in modifiers if mod]
+        if parts and len(label) == 1 and label.isalpha():
+            label = label.upper()
+        return "+".join(parts + [label])
+
+    def action_show_help_panel(self) -> None:
+        """Show the keys panel — ours, which carries a Close button."""
+        if not self.screen.query(HelpPanel):
+            self.screen.mount(KeysPanel())
+
+    @on(Button.Pressed, "#keys-close")
+    def _close_keys_panel(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.action_hide_help_panel()
+
     CSS = """
     Screen {
         background: $surface;
+    }
+
+    /* Textual's maximize backdrop draws a hatch pattern; keep it plain. */
+    Screen.-maximized-view {
+        hatch: none;
+        background: $surface;
+    }
+
+    /* The keys panel: louder than Textual's default so it reads as a panel. */
+    HelpPanel {
+        background: $panel;
+        border-left: tall $accent;
+    }
+    HelpPanel Markdown, HelpPanel KeyPanel {
+        background: $panel;
+    }
+    HelpPanel .bindings-table--key {
+        color: $accent;
+        text-style: bold;
+    }
+    HelpPanel .bindings-table--header {
+        color: $text;
+        text-style: bold;
     }
 
     #status {
