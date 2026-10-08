@@ -5,6 +5,16 @@ All notable changes to Autonoma will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-10-08
+
+### Added
+- **Frictionless Hybrid Python Auto-Installer.** If Python 3.11+ is not found on
+  first launch, the interactive CLI prompts the user with permission to install
+  Python automatically. Utilizes native package managers (`winget` on Windows,
+  `brew` on macOS, `apt`/`dnf`/`pacman` on Linux) with an automatic zero-root
+  standalone portable Python fallback, followed by instant `.venv` bootstrap and
+  direct handover into the TUI.
+
 ## [1.0.5] - 2026-10-08
 
 ### Added

@@ -8,9 +8,12 @@
 const { execSync, execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 
 const ROOT = path.resolve(__dirname, "..");
 const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
+const IS_LINUX = process.platform === "linux";
 const VENV = path.join(ROOT, ".venv");
 const PIP = IS_WIN
   ? path.join(VENV, "Scripts", "pip.exe")
@@ -55,11 +58,50 @@ function bail(msg) {
 // --- Find Python ---
 
 function findPython() {
-  const candidates = IS_WIN
-    ? ["python", "python3", "py -3"]
-    : ["python3", "python"];
+  const standaloneRoot = path.join(os.homedir(), ".autonoma", "runtime");
+  const candidates = [];
+
+  const standalonePy = IS_WIN
+    ? path.join(standaloneRoot, "python", "python.exe")
+    : path.join(standaloneRoot, "python", "bin", "python3");
+  if (fs.existsSync(standalonePy)) candidates.push(standalonePy);
+
+  const altStandalonePy = IS_WIN
+    ? path.join(standaloneRoot, "python", "python", "python.exe")
+    : path.join(standaloneRoot, "python", "python", "bin", "python3");
+  if (fs.existsSync(altStandalonePy)) candidates.push(altStandalonePy);
+
+  if (IS_WIN) {
+    candidates.push("python", "python3", "py -3");
+    const localApp = process.env.LOCALAPPDATA || "";
+    const progFiles = process.env.ProgramFiles || "C:\\Program Files";
+    candidates.push(
+      path.join(localApp, "Programs", "Python", "Python312", "python.exe"),
+      path.join(localApp, "Programs", "Python", "Python311", "python.exe"),
+      path.join(progFiles, "Python312", "python.exe"),
+      path.join(progFiles, "Python311", "python.exe")
+    );
+  } else {
+    candidates.push("python3", "python");
+    if (IS_MAC) {
+      candidates.push(
+        "/opt/homebrew/bin/python3.12",
+        "/opt/homebrew/bin/python3.11",
+        "/usr/local/bin/python3.12",
+        "/usr/local/bin/python3.11"
+      );
+    } else if (IS_LINUX) {
+      candidates.push(
+        "/usr/bin/python3.12",
+        "/usr/bin/python3.11",
+        "/usr/local/bin/python3.12",
+        "/usr/local/bin/python3.11"
+      );
+    }
+  }
 
   for (const cmd of candidates) {
+    if (cmd.includes(path.sep) && !fs.existsSync(cmd)) continue;
     try {
       const ver = execSync(`${cmd} --version 2>&1`, { encoding: "utf-8" }).trim();
       const match = ver.match(/Python (\d+)\.(\d+)\.(\d+)/);
